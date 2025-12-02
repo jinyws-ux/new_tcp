@@ -43,6 +43,17 @@ class ReportGenerator:
                             all_msg_types.add(mt)
             sorted_msg_types = sorted(list(all_msg_types))
 
+            entry_id_map = {id(entry): i for i, entry in enumerate(raw_log_entries)}
+
+            def get_raw_anchor(entry_obj):
+                """辅助函数：根据对象找到原文页面的锚点ID"""
+                if entry_obj is None: return ""
+                raw_idx = entry_id_map.get(id(entry_obj))
+                # 如果找到了索引，返回 log_123；如果没找到，默认返回空或由逻辑决定
+                return f"log_{raw_idx}" if raw_idx is not None else ""
+
+
+
             # =================================================================
             # 1. 生成主分析页面 (Index Page)
             # =================================================================
@@ -682,7 +693,7 @@ class ReportGenerator:
                     # 写入主行
                     f.write(f"""        <div class="timestamp" id="ts_{index}" data-id="{log_id}" data-timestamp="{timestamp_ms}" {trans_attr}>
                                 {line_html}
-                                <a class="btn btn-primary jump-btn" href="{raw_filename}#{log_id}" target="_blank" title="查看原文">查看原文</a>
+                                <a class="btn btn-primary jump-btn" href="{raw_filename}#{get_raw_anchor(main_entry)}" target="_blank" title="查看原文">查看原文</a>
                             </div>\n""")
 
                     # 如果是事务且有重试，写入隐藏的重试行
@@ -694,7 +705,7 @@ class ReportGenerator:
                             f.write(f"""            <div class="timestamp" style="border:none; padding: 4px 0;">
                                     <span style="color:#9ca3af; margin-right:8px;">├─ 重试 {r_idx+1}</span>
                                     {r_html}
-                                    <a class="btn btn-primary jump-btn" href="{raw_filename}#log_{index}_r{r_idx}" target="_blank" title="查看原文">查看原文</a>
+                                    <a class="btn btn-primary jump-btn" href="{raw_filename}#{get_raw_anchor(req)}" target="_blank" title="查看原文">查看原文</a>
                                 </div>\n""")
                         f.write('</div>\n')
 
@@ -709,7 +720,7 @@ class ReportGenerator:
                                     <span class="badge-resp">回复</span>
                                     {resp_html}
                                 </div>
-                                <a class="btn btn-primary jump-btn" href="{raw_filename}#log_{index}_resp" target="_blank" title="查看原文">查看原文</a>
+                                <a class="btn btn-primary jump-btn" href="{raw_filename}#{get_raw_anchor(resp_entry)}" target="_blank" title="查看原文">查看原文</a>
                             </div>\n""")
 
                 f.write("""    </div>
