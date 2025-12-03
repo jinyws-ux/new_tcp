@@ -1,0 +1,121 @@
+确实，如果原来的代码有上千行，直接覆盖容易丢东西。根据你提供的截图报错（SyntaxError 和 ReferenceError）以及之前分析的“对象 vs 字典”读取问题，我们需要做 3 个关键修改。
+请按照下面的步骤，在你的 ReportGenerator 类中定位并修改这几处代码即可。
+第一步：添加 2 个核心辅助方法
+操作：请在 ReportGenerator 类内部（比如 __init__ 方法的下面），加入这两个新方法。这两个方法是修复所有问题的基础。
+    # === 【新增】辅助方法 1：兼容获取属性（修复读取不到数据的问题） ===
+    def _get_attr(self, obj: Any, key: str, default: Any = None) -> Any:
+        if obj is None:
+            return default
+        # 如果是字典，用 .get()；如果是对象，用 getattr()
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    # === 【新增】辅助方法 2：安全 JSON 序列化（修复页面白屏/JS报错） ===
+    def _safe_json_dump(self, data: Any) -> str:
+        # 序列化为 JSON，并处理特殊字符防止 JS 语法错误
+        json_str = json.dumps(data, ensure_ascii=False)
+        return json_str.replace('\u2028', '\\u2028').replace('\u2029', '\\u2029').replace('</', '<\\/')
+
+第二步：修改 generate_html_logs 方法的前半部分
+定位：找到方法里“收集所有出现的报文类型”和“准备 JS 数据”的那一段代码。
+修改：替换为下方的逻辑。
+修改前（你的原代码）：
+            # 收集所有出现的报文类型 (逻辑保持不变)
+            all_msg_types = set()
+            for entry in raw_log_entries:
+                for seg in entry.get('segments', []):  # <--- 这里会报错
+                    if seg.get('kind') == 'msg_type':
+                        # ...省略...
+            sorted_msg_types = sorted(list(all_msg_types))
+
+            # ...省略...
+            abnormal_items_json = json.dumps(abnormal_items, ensure_ascii=False).replace('</', '<\\/')
+
+修改后（替换为）：
+            # === 【修改】使用 _get_attr 修复读取 ===
+            all_msg_types = set()
+            for entry in raw_log_entries:
+                # 兼容对象和字典
+                segments = self._get_attr(entry, 'segments', [])
+                for seg in segments:
+                    if self._get_attr(seg, 'kind') == 'msg_type':
+                        mt = str(self._get_attr(seg, 'text', '')).strip()
+                        if mt:
+                            all_msg_types.add(mt)
+            sorted_msg_types = sorted(list(all_msg_types))
+
+            entry_id_map = {id(entry): i for i, entry in enumerate(raw_log_entries)}
+            abnormal_items = self._collect_abnormal_items(log_entries)
+
+            # === 【修改】使用 _safe_json_dump 修复 JS 报错 ===
+            # 不要直接把 list 塞进 f-string，必须先转成安全的 JSON 字符串
+            js_msg_types = self._safe_json_dump(sorted_msg_types)
+            js_abnormal_items = self._safe_json_dump(abnormal_items)
+
+第三步：修改 HTML 写入处的 <script> 变量注入
+定位：在 generate_html_logs 里，f.write 写入 HTML 头部 <script> 的地方。
+修改前：
+                    const ALL_MESSAGE_TYPES = {sorted_msg_types};  # <--- 这里导致了 SyntaxError
+                    const ABNORMAL_ITEMS = {abnormal_items_json};
+
+修改后：
+                    // === 【修改】注入刚才准备好的安全 JSON 变量 ===
+                    const ALL_MESSAGE_TYPES = {js_msg_types};
+                    const ABNORMAL_ITEMS = {js_abnormal_items};
+
+第四步：修改 render_line_content 内部函数
+定位：generate_html_logs 方法内部定义的 def render_line_content(entry, extra_badges=""): 函数。
+操作：把里面所有的 .get(...) 替换为 self._get_attr(...)。
+关键修改点示例：
+ * segs = entry.get('segments') or []
+   改为：segs = self._get_attr(entry, 'segments') or []
+ * if s.get('kind') == 'msg_type':
+   改为：if self._get_attr(s, 'kind') == 'msg_type':
+ * ts_text_display = entry['timestamp'].strftime... (如果有这种写法)
+   改为：
+   # 增加类型检查，防止非 datetime 对象报错
+ts_obj = self._get_attr(entry, 'timestamp')
+if ts_text_display != nbsp and ts_obj:
+     if isinstance(ts_obj, datetime):
+         ts_text_display = ts_obj.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+     else:
+         ts_text_display = str(ts_obj)
+
+第五步：修改原文页生成逻辑
+定位：generate_html_logs 方法末尾，写入 raw_output_path 的循环部分。
+修改前：
+                for index, entry in enumerate(raw_log_entries):
+                    # ...
+                    raw_text = f"{entry['original_line1']}\n{entry['original_line2']}" # <--- 对象不支持 ['key']
+
+修改后：
+                for index, entry in enumerate(raw_log_entries):
+                    log_id = f"log_{index}"
+                    # === 【修改】使用 _get_attr 获取原文 ===
+                    line1 = self._get_attr(entry, 'original_line1', '')
+                    line2 = self._get_attr(entry, 'original_line2', '')
+                    raw_text = f"{line1}\n{line2}"
+                    f_raw.write(f"""    <div class="log-entry" id="{log_id}">
+        <pre>{html.escape(raw_text)}</pre>
+    </div>\n""")
+
+第六步：修改底部的 4 个私有方法
+定位：_extract_msg_type, _extract_timestamp_text, _build_abnormal_item, _collect_abnormal_items。
+操作：把这里面所有的 entry.get(...)、item.get(...)、seg.get(...) 全部替换为 self._get_attr(..., ...)。
+特别是 _build_abnormal_item 方法：
+    def _build_abnormal_item(self, entry: Dict[str, Any], index: int, suffix: str = '') -> Dict[str, Any]:
+        # === 【修改】 ===
+        hits = self._get_attr(entry, 'escape_hits') or []
+        fields = set() # 建议改为 set 去重
+        details = []
+        for hit in hits:
+            # hit 里的属性也要用 _get_attr
+            f_name = self._get_attr(hit, 'field', '') or ''
+            fields.add(f_name.strip())
+            disp = self._get_attr(hit, 'display')
+            val = self._get_attr(hit, 'value')
+            # ...后续拼接逻辑同理...
+
+总结
+你现在的代码“功能损坏”是因为它试图把对象当字典用，以及JS注入不规范。做完上面这几步“查找替换”，你的 1000 多行代码就能正常工作了，筛选栏和异常报错统计也会立刻恢复。
