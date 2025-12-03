@@ -10,6 +10,10 @@
 import { showMessage } from '../core/messages.js';
 import { api } from '../core/api.js';
 
+const ESCAPE_TAGS = {
+    ABNORMAL: 'abnormal_error',
+};
+
 export class VisualParserBuilder {
     constructor() {
         this.state = {
@@ -378,11 +382,19 @@ export class VisualParserBuilder {
             this.renderEscapeList(segment);
             document.getElementById('btn-add-escape').addEventListener('click', () => {
                 if (!segment.escapes) segment.escapes = {};
+                if (!segment.escapeTags) segment.escapeTags = {};
                 const key = prompt('输入转义的原始值（Key）:');
                 if (key && key.trim()) {
                     const value = prompt('输入转义后的显示值（Value）:');
                     if (value !== null) {
-                        segment.escapes[key.trim()] = value.trim();
+                        const trimmedKey = key.trim();
+                        segment.escapes[trimmedKey] = value.trim();
+                        const markAbnormal = window.confirm('是否为此转义添加“异常报错”标签？');
+                        if (markAbnormal) {
+                            segment.escapeTags[trimmedKey] = [ESCAPE_TAGS.ABNORMAL];
+                        } else if (segment.escapeTags[trimmedKey]) {
+                            delete segment.escapeTags[trimmedKey];
+                        }
                         this.renderEscapeList(segment);
                     }
                 }
@@ -418,7 +430,10 @@ export class VisualParserBuilder {
             row.innerHTML = `
                 <input type="text" class="vp-form-control" value="${key}" disabled style="flex:1; opacity:0.8; font-size:12px;">
                 <span style="color:#6b7280;">=></span>
-                <input type="text" class="vp-form-control" value="${value}" disabled style="flex:1; opacity:0.8; font-size:12px;">
+                <div style="flex:1; display:flex; flex-direction:column; gap:4px;">
+                  <input type="text" class="vp-form-control" value="${value}" disabled style="opacity:0.8; font-size:12px;">
+                  ${segment.escapeTags?.[key]?.includes(ESCAPE_TAGS.ABNORMAL) ? '<span class="escape-tag-badge">异常报错</span>' : ''}
+                </div>
                 <button class="vp-btn vp-btn-danger" style="padding:2px 6px; font-size:11px;">删除</button>
             `;
             container.appendChild(row);
@@ -426,6 +441,9 @@ export class VisualParserBuilder {
             // Bind delete button
             row.querySelector('button').addEventListener('click', () => {
                 delete segment.escapes[key];
+                if (segment.escapeTags && segment.escapeTags[key]) {
+                    delete segment.escapeTags[key];
+                }
                 this.renderEscapeList(segment);
             });
         });
@@ -529,11 +547,16 @@ export class VisualParserBuilder {
         this.state.segments
             .filter(seg => seg.role === 'none') // Only include normal fields
             .forEach(seg => {
-                fields[seg.name] = {
+                const escapeTags = seg.escapeTags || {};
+                const fieldEntry = {
                     Start: seg.start,
                     Length: seg.length,
                     Escapes: seg.escapes || {}
                 };
+                if (Object.keys(escapeTags).length) {
+                    fieldEntry.EscapeTags = escapeTags;
+                }
+                fields[seg.name] = fieldEntry;
             });
 
         fullConfig[typeKey].Versions[verKey] = { Fields: fields };

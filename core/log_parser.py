@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
+ABNORMAL_ESCAPE_TAG = "abnormal_error"
 
 
 class LogParser:
@@ -114,7 +115,7 @@ class LogParser:
             return content
 
     def parse_message_segments(self, content: str) -> Dict[str, Any]:
-        result = {"message_type": "", "version": "", "fields": [], "segments": [], "description": ""}
+        result = {"message_type": "", "version": "", "fields": [], "segments": [], "description": "", "escape_hits": []}
         try:
             msg_type = content[16:24].strip() if len(content) >= 24 else ""
             version = self.get_version_from_content(content) or ""
@@ -129,6 +130,7 @@ class LogParser:
                 else:
                     fields_config = msg_config.get('Fields', {})
             idx = 0
+            escape_hits = []
             for field, field_cfg in fields_config.items():
                 start = field_cfg.get('Start', 0)
                 length = field_cfg.get('Length', -1)
@@ -141,13 +143,34 @@ class LogParser:
                         end = start + length
                         value = content[start:end].strip() if end <= len(content) else "内容不足"
                 esc = field_cfg.get('Escapes') or field_cfg.get('Escape') or {}
+                escape_tags = field_cfg.get('EscapeTags') or {}
+                tags = []
+                if isinstance(escape_tags, dict):
+                    raw_tags = escape_tags.get(value) or []
+                    if isinstance(raw_tags, list):
+                        tags = [t for t in raw_tags if isinstance(t, str)]
+
                 if isinstance(esc, dict) and value in esc:
                     disp = f"{value}({esc[value]})"
                 else:
                     disp = value if not esc else f"{value}(未定义转义)"
+
+                if ABNORMAL_ESCAPE_TAG in tags:
+                    escape_hits.append({
+                        "field": field,
+                        "value": value,
+                        "display": disp,
+                        "tags": tags,
+                    })
+
+                seg_entry = {"kind": "field", "text": f"{field}={disp}", "idx": idx}
+                if tags:
+                    seg_entry["escape_tags"] = tags
+
                 result["fields"].append({"name": field, "value": disp, "start": start, "length": length})
-                result["segments"].append({"kind": "field", "text": f"{field}={disp}", "idx": idx})
+                result["segments"].append(seg_entry)
                 idx += 1
+            result["escape_hits"] = escape_hits
             return result
         except Exception:
             result["message_type"] = content[16:24].strip() if len(content) >= 24 else ""
@@ -250,7 +273,11 @@ class LogParser:
                     'original_line1': original_line1,
                     'original_line2': original_line2,
                     'parsed': self.parse_message_content(original_line2),
-                    'segments': segs
+                    'segments': segs,
+                    'message_type': msg.get('message_type', ''),
+                    'version': msg.get('version', ''),
+                    'description': msg.get('description', ''),
+                    'escape_hits': msg.get('escape_hits', []),
                 })
                 i += 2
                 continue
@@ -309,7 +336,11 @@ class LogParser:
                     'original_line1': current_line,
                     'original_line2': raw_message_content,
                     'parsed': log_line,
-                    'segments': segs
+                    'segments': segs,
+                    'message_type': msg.get('message_type', ''),
+                    'version': msg.get('version', ''),
+                    'description': msg.get('description', ''),
+                    'escape_hits': msg.get('escape_hits', []),
                 })
                 i += 2
             else:
