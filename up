@@ -1,11 +1,10 @@
 # core/report_generator.py
+import html
+import json
 import logging
 import os
-import json
 from datetime import datetime
 from typing import List, Dict, Any
-import html
-
 
 class ReportGenerator:
     def __init__(self, output_dir: str):
@@ -17,9 +16,9 @@ class ReportGenerator:
         """获取当前时间戳"""
         return datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # =========================================================================
-    # 【新增修复工具 1】兼容 字典(.get) 和 对象(getattr) 的读取
-    # =========================================================================
+    # =================================================================
+    # 【核心修复 1】兼容对象和字典的属性读取，防止报错
+    # =================================================================
     def _get_attr(self, obj: Any, key: str, default: Any = None) -> Any:
         if obj is None:
             return default
@@ -27,15 +26,14 @@ class ReportGenerator:
             return obj.get(key, default)
         return getattr(obj, key, default)
 
-    # =========================================================================
-    # 【新增修复工具 2】安全JSON转换，防止 JS SyntaxError
-    # =========================================================================
+    # =================================================================
+    # 【核心修复 2】安全 JSON 序列化，彻底解决前端 SyntaxError
+    # =================================================================
     def _safe_json(self, data: Any) -> str:
-        # 将数据转换为 JSON 字符串，并处理特殊字符防止 JS 崩溃
         return json.dumps(data, ensure_ascii=False).replace('</', '<\\/').replace('\u2028', '\\u2028').replace('\u2029', '\\u2029')
 
     def generate_html_logs(self, log_entries: List[Any], output_path: str, raw_log_entries: List[Dict[str, Any]] = None) -> str:
-        """生成HTML格式的日志报告 - 已拆分为分析页和原文页"""
+        """生成HTML格式的日志报告"""
         try:
             # 准备路径信息
             output_dir = os.path.dirname(output_path)
@@ -51,43 +49,43 @@ class ReportGenerator:
 
             self.logger.info(f"生成HTML报告，主文件: {output_path}，原文文件: {raw_output_path}，日志条目数: {len(log_entries)}")
 
-            # 收集所有出现的报文类型 (逻辑保持不变)
+            # --- 1. 收集报文类型 (使用 _get_attr 修复读取) ---
             all_msg_types = set()
             for entry in raw_log_entries:
-                # 【修改点】使用 _get_attr 替换 .get
                 segments = self._get_attr(entry, 'segments', [])
                 for seg in segments:
-                    # 【修改点】使用 _get_attr 替换 .get
                     if self._get_attr(seg, 'kind') == 'msg_type':
                         mt = str(self._get_attr(seg, 'text', '')).strip()
                         if mt:
                             all_msg_types.add(mt)
             sorted_msg_types = sorted(list(all_msg_types))
 
-            # 【修改点】生成安全的 JS 变量
+            # --- 2. 收集异常项 (确保调用到底部的修复版方法) ---
+            abnormal_items = self._collect_abnormal_items(log_entries)
+
+            # --- 3. 【关键】生成安全的 JS 变量 ---
             js_msg_types = self._safe_json(sorted_msg_types)
+            js_abnormal_items = self._safe_json(abnormal_items)
 
             entry_id_map = {id(entry): i for i, entry in enumerate(raw_log_entries)}
 
             def get_raw_anchor(entry_obj):
-                """辅助函数：根据对象找到原文页面的锚点ID"""
                 if entry_obj is None: return ""
                 raw_idx = entry_id_map.get(id(entry_obj))
-                # 如果找到了索引，返回 log_123；如果没找到，默认返回空或由逻辑决定
                 return f"log_{raw_idx}" if raw_idx is not None else ""
 
             # =================================================================
             # 1. 生成主分析页面 (Index Page)
             # =================================================================
             with open(output_path, 'w', encoding='utf-8') as f:
-                # 写入HTML头部 (样式和JS完全保留原版，仅移除未使用的部分)
                 f.write(f"""<!DOCTYPE html>
             <html>
             <head>
                 <title>日志分析报告</title>
                 <script>
-                    // 【修改点】使用 json 转换后的变量，防止 SyntaxError
+                    // 【修复】使用安全转换后的变量，防止 JS 语法错误
                     const ALL_MESSAGE_TYPES = {js_msg_types};
+                    const ABNORMAL_ITEMS = {js_abnormal_items};
                 </script>
                 <style>
                     body {{
@@ -228,9 +226,163 @@ class ReportGenerator:
                         transition: all 0.2s;
                     }}
                     .tag:hover {{ background: #dbeafe; }}
-                    
+
                     .tag-remove {{ cursor: pointer; font-size: 14px; opacity: 0.6; line-height: 1; }}
                     .tag-remove:hover {{ opacity: 1; color: #1e3a8a; }}
+
+                    .tag-abnormal {{
+                        background: #fef2f2;
+                        border: 1px solid #fecdd3;
+                        color: #b91c1c;
+                    }}
+
+                    .nav-toggle {{
+                        position: fixed;
+                        left: 10px;
+                        top: 20px;
+                        z-index: 160;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 8px;
+                        padding: 8px 12px;
+                        border-radius: 12px;
+                        border: 1px solid #e5e7eb;
+                        background: #ffffff;
+                        color: #111827;
+                        box-shadow: 0 10px 25px -10px rgba(0,0,0,0.2);
+                        cursor: pointer;
+                        font-weight: 600;
+                        transition: all 0.2s;
+                    }}
+                    .nav-toggle:hover {{
+                        box-shadow: 0 20px 35px -10px rgba(0,0,0,0.25);
+                        transform: translateY(-1px);
+                    }}
+                    .nav-badge {{
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-width: 22px;
+                        height: 22px;
+                        padding: 0 6px;
+                        border-radius: 999px;
+                        background: #fee2e2;
+                        color: #991b1b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        border: 1px solid #fecdd3;
+                    }}
+
+                    .side-nav {{
+                        position: fixed;
+                        left: -360px;
+                        top: 20px;
+                        bottom: 20px;
+                        width: 320px;
+                        background: #ffffff;
+                        border-radius: 16px;
+                        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+                        border: 1px solid #e5e7eb;
+                        padding: 16px;
+                        z-index: 150;
+                        overflow-y: auto;
+                        transition: all 0.3s ease;
+                    }}
+                    body.nav-open .side-nav {{ left: 20px; }}
+                    body.nav-open .nav-toggle {{ left: 350px; }}
+
+                    body.nav-open #filterBar {{ margin-left: 340px; transition: margin-left 0.3s ease; }}
+                    body.nav-open #timestamps {{ margin-left: 340px; transition: margin-left 0.3s ease; }}
+
+                    .side-nav__header {{
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 8px;
+                        margin-bottom: 12px;
+                    }}
+                    .side-nav__title {{
+                        font-size: 16px;
+                        font-weight: 700;
+                        color: #111827;
+                    }}
+                    .side-nav__subtitle {{
+                        font-size: 12px;
+                        color: #6b7280;
+                        margin-top: 2px;
+                    }}
+                    .nav-empty {{
+                        padding: 12px;
+                        border: 1px dashed #e5e7eb;
+                        border-radius: 10px;
+                        color: #6b7280;
+                        background: #f9fafb;
+                        font-size: 13px;
+                    }}
+                    .abnormal-item {{
+                        border: 1px solid #e5e7eb;
+                        border-radius: 12px;
+                        padding: 10px 12px;
+                        margin-bottom: 10px;
+                        background: #fdf2f8;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    }}
+                    .abnormal-item:hover {{
+                        border-color: #f472b6;
+                        box-shadow: 0 4px 12px -6px rgba(244, 114, 182, 0.45);
+                    }}
+                    .abnormal-item__top {{
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        margin-bottom: 6px;
+                        gap: 6px;
+                    }}
+                    .abnormal-time {{
+                        font-size: 13px;
+                        color: #4b5563;
+                    }}
+                    .abnormal-count {{
+                        background: #fee2e2;
+                        color: #991b1b;
+                        border: 1px solid #fecdd3;
+                        border-radius: 8px;
+                        padding: 2px 8px;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }}
+                    .abnormal-item__meta {{
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 6px;
+                        align-items: center;
+                        color: #111827;
+                        font-weight: 600;
+                    }}
+                    .abnormal-type {{
+                        background: #eef2ff;
+                        color: #4338ca;
+                        border: 1px solid #c7d2fe;
+                        border-radius: 8px;
+                        padding: 2px 8px;
+                        font-size: 12px;
+                    }}
+                    .abnormal-fields {{
+                        color: #6b7280;
+                        font-size: 12px;
+                    }}
+
+                    .flash-highlight {{
+                        animation: flash-animation 2.4s ease-out forwards;
+                        position: relative;
+                        border-color: #ef4444 !important;
+                    }}
+                    @keyframes flash-animation {{
+                        0% {{ background-color: #fee2e2; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.35); }}
+                        50% {{ background-color: #fff1f2; box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25); }}
+                        100% {{ background-color: #ffffff; box-shadow: none; }}
+                    }}
 
                     .btn {{ 
                         height: 36px; 
@@ -381,6 +533,8 @@ class ReportGenerator:
                                 }}
                             }});
                         }}
+
+                        renderAbnormalNav();
                     }}
                     
                     // 保留原有的筛选和时间解析逻辑，不做修改
@@ -577,10 +731,78 @@ class ReportGenerator:
                         elements.forEach(el => el.classList.remove('trans-highlight'));
                     }}
 
-                    window.onload = init;
+                    function focusAbnormalAnchor(anchor) {{
+                        if (!anchor) return;
+                        const target = document.getElementById(anchor);
+                        if (!target) return;
+                        document.querySelectorAll('.flash-highlight').forEach(el => el.classList.remove('flash-highlight'));
+                        target.classList.add('flash-highlight');
+                        target.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                    }}
+
+                    function toggleAbnormalNav() {{
+                        document.body.classList.toggle('nav-open');
+                    }}
+
+                    function closeAbnormalNav() {{
+                        document.body.classList.remove('nav-open');
+                    }}
+
+                    function renderAbnormalNav() {{
+                        const list = document.getElementById('abnormalList');
+                        const empty = document.getElementById('abnormalEmpty');
+                        const badge = document.getElementById('abnormalCount');
+                        if (badge) badge.textContent = ABNORMAL_ITEMS.length;
+                        if (!list) return;
+                        list.innerHTML = '';
+                        if (!ABNORMAL_ITEMS.length) {{
+                            if (empty) empty.style.display = 'block';
+                            return;
+                        }}
+                        if (empty) empty.style.display = 'none';
+
+                        ABNORMAL_ITEMS.forEach((item) => {{
+                            const div = document.createElement('div');
+                            div.className = 'abnormal-item';
+                            const fieldsText = (item.fields || []).join('、') || '未记录字段';
+                            div.innerHTML = `
+                                <div class="abnormal-item__top">
+                                    <span class="abnormal-time">${{item.time || ''}}</span>
+                                    <span class="abnormal-count">×${{item.count || 0}}</span>
+                                </div>
+                                <div class="abnormal-item__meta">
+                                    <span class="abnormal-type">${{item.msgType || '未知报文'}}</span>
+                                    <span class="abnormal-fields">${{fieldsText}}</span>
+                                </div>
+                            `;
+                            div.title = (item.details || []).join('\\n');
+                            div.onclick = () => {{
+                                focusAbnormalAnchor(item.anchor);
+                                closeAbnormalNav();
+                            }};
+                            list.appendChild(div);
+                        }});
+                    }}
+
+                    window.addEventListener('DOMContentLoaded', init);
                 </script>
             </head>
             <body>
+                <button id="navToggle" class="nav-toggle" onclick="toggleAbnormalNav()">
+                    异常报错
+                    <span id="abnormalCount" class="nav-badge">0</span>
+                </button>
+                <div id="sideNav" class="side-nav">
+                    <div class="side-nav__header">
+                        <div>
+                            <div class="side-nav__title">异常报错</div>
+                            <div class="side-nav__subtitle">解析中命中的异常转义</div>
+                        </div>
+                        <button class="btn" onclick="closeAbnormalNav()">收起</button>
+                    </div>
+                    <div id="abnormalEmpty" class="nav-empty" style="display:none;">暂无异常报错</div>
+                    <div id="abnormalList"></div>
+                </div>
                 <div id="filterBar">
                     <div class="filter-group" style="flex: 1; min-width: 200px;">
                         <span class="filter-label">内容搜索</span>
@@ -618,7 +840,7 @@ class ReportGenerator:
                 # 写入时间戳索引（BS结构，左侧）
                 for index, item in enumerate(log_entries):
                     # 判断是普通日志条目还是事务对象
-                    # 【修改点】使用 hasattr 检查对象，或者 .get 检查字典
+                    # 【修复】使用 hasattr 检查对象属性
                     is_transaction = hasattr(item, 'requests') and hasattr(item, 'response')
                     
                     # 准备要渲染的主条目
@@ -642,7 +864,7 @@ class ReportGenerator:
                     
                     # 辅助函数：渲染单行 HTML
                     def render_line_content(entry, extra_badges=""):
-                        # 【修改点】使用 _get_attr 替换 .get
+                        # 【修复】使用 _get_attr 替换 .get
                         segs = self._get_attr(entry, 'segments', [])
                         palette = ['#e3f2fd', '#e8f5e9', '#fff3e0', '#ede7f6', '#e0f7fa']
                         parts = []
@@ -655,13 +877,13 @@ class ReportGenerator:
                         has_dir = bool(block_map['dir'])
                         
                         ts_text_display = block_map['ts'] or nbsp
-                        ts_obj = self._get_attr(entry, 'timestamp')
-                        if ts_text_display != nbsp and ts_obj:
-                            # 兼容 datetime 和 string
-                            if isinstance(ts_obj, datetime):
-                                ts_text_display = ts_obj.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                        # 【修复】安全读取 timestamp
+                        ts_val = self._get_attr(entry, 'timestamp')
+                        if ts_text_display != nbsp and ts_val:
+                            if isinstance(ts_val, datetime):
+                                ts_text_display = ts_val.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                             else:
-                                ts_text_display = str(ts_obj)
+                                ts_text_display = str(ts_val)
                         
                         if has_dir:
                             dir_text = block_map['dir'] or nbsp
@@ -684,7 +906,9 @@ class ReportGenerator:
                                     msg_desc = self._get_attr(s, 'description', '')
                                     break
                             
-                            title_attr = f'data-title="{html.escape(str(msg_desc))}:{ver_text}"' if msg_desc else ''
+                            # 【修复】html.escape 之前确保是字符串
+                            safe_desc = html.escape(str(msg_desc)) if msg_desc else ""
+                            title_attr = f'data-title="{safe_desc}:{ver_text}"' if msg_desc else ''
                             parts.append(f'<span class="seg-fixed seg-msgtype-sm seg-msgtype" {title_attr} style="background:#fff3e0;color:#1b1f23;">{msgtype_text}</span>')
                         else:
                             pid_text = (block_map['pid'] or '').strip()
@@ -704,8 +928,14 @@ class ReportGenerator:
                                 bg = palette[idx % len(palette)]
                                 txt = self._get_attr(s, 'text', '')
                                 parts.append(f'<span class="seg-free" style="background:{bg};color:#1b1f23;">{txt}</span>')
-                        
+
                         return ''.join(parts) + extra_badges
+
+                    def append_abnormal_badge(entry, badges=""):
+                        # 【修复】使用 _get_attr 读取
+                        if self._get_attr(entry, 'escape_hits'):
+                            badges = f"{badges} <span class=\"tag tag-abnormal\" title=\"包含异常报错转义\">异常报错</span>"
+                        return badges
 
                     # 构建主行内容
                     extra_badges = ""
@@ -718,7 +948,9 @@ class ReportGenerator:
                         if not has_response:
                             extra_badges += ' <span class="tag" style="background:#f3f4f6;color:#6b7280;">[无回复]</span>'
 
+                    extra_badges = append_abnormal_badge(main_entry, extra_badges)
                     line_html = prefix_html + render_line_content(main_entry, extra_badges)
+                    
                     ts_val = self._get_attr(main_entry, 'timestamp')
                     timestamp_ms = int(ts_val.timestamp() * 1000) if ts_val and isinstance(ts_val, datetime) else 0
                     
@@ -733,7 +965,7 @@ class ReportGenerator:
                         f.write(f'<div id="retries_{log_id}" style="display:none; margin-left: 20px; border-left: 2px solid #e5e7eb; padding-left: 10px;">\n')
                         # 遍历旧请求（除了最后一个）
                         for r_idx, req in enumerate(getattr(item, 'requests', [])[:-1]):
-                            r_html = render_line_content(req)
+                            r_html = render_line_content(req, append_abnormal_badge(req))
                             f.write(f"""            <div class="timestamp" style="border:none; padding: 4px 0;">
                                     <span style="color:#9ca3af; margin-right:8px;">├─ 重试 {r_idx+1}</span>
                                     {r_html}
@@ -744,7 +976,7 @@ class ReportGenerator:
                     # 如果有回复，写入回复行 (作为独立行但视觉上连接)
                     if is_transaction and has_response:
                         resp_entry = getattr(item, 'response')
-                        resp_html = render_line_content(resp_entry)
+                        resp_html = render_line_content(resp_entry, append_abnormal_badge(resp_entry))
                         # 使用 tree-connector 连接
                         f.write(f"""        <div class="timestamp" id="ts_{index}_resp" data-timestamp="{timestamp_ms}" {trans_attr} style="border-top:none; margin-top:-1px; padding-top:4px;">
                                 <div class="resp-container">
@@ -816,7 +1048,7 @@ class ReportGenerator:
                 </style>
                 <script>
                     // 自动跳转并居中显示的核心逻辑
-                    window.onload = function() {{
+                    window.addEventListener('DOMContentLoaded', function() {{
                         if(location.hash) {{
                             var id = location.hash.replace('#','');
                             var el = document.getElementById(id);
@@ -826,7 +1058,7 @@ class ReportGenerator:
                                 el.classList.add('flash-highlight');
                             }}
                         }}
-                    }}
+                    }});
                 </script>
             </head>
             <body>
@@ -835,8 +1067,10 @@ class ReportGenerator:
                 # 写入纯日志条目 (无按钮，无上下文链接)
                 for index, entry in enumerate(raw_log_entries):
                     log_id = f"log_{index}"
-                    # 【修改点】使用 _get_attr 替换 [key]
-                    raw_text = f"{self._get_attr(entry, 'original_line1', '')}\n{self._get_attr(entry, 'original_line2', '')}"
+                    # 【修复】使用 _get_attr 修复原文页读取
+                    line1 = self._get_attr(entry, 'original_line1', '')
+                    line2 = self._get_attr(entry, 'original_line2', '')
+                    raw_text = f"{line1}\n{line2}"
                     f_raw.write(f"""    <div class="log-entry" id="{log_id}">
         <pre>{html.escape(raw_text)}</pre>
     </div>\n""")
@@ -849,6 +1083,75 @@ class ReportGenerator:
         except Exception as e:
             self.logger.error(f"生成HTML报告失败: {str(e)}")
             return None
+
+    def _extract_msg_type(self, entry: Dict[str, Any]) -> str:
+        try:
+            if self._get_attr(entry, 'message_type'):
+                return str(self._get_attr(entry, 'message_type', '')).strip()
+            for seg in self._get_attr(entry, 'segments', []):
+                if self._get_attr(seg, 'kind') == 'msg_type':
+                    return str(self._get_attr(seg, 'text', '')).strip()
+        except Exception:
+            pass
+        return ''
+
+    def _extract_timestamp_text(self, entry: Dict[str, Any]) -> str:
+        try:
+            ts = self._get_attr(entry, 'timestamp')
+            if ts:
+                # 【修复】类型兼容
+                if isinstance(ts, datetime):
+                    return ts.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                else:
+                    return str(ts)
+            for seg in self._get_attr(entry, 'segments', []):
+                if self._get_attr(seg, 'kind') == 'ts':
+                    return str(self._get_attr(seg, 'text', '')).strip()
+        except Exception:
+            pass
+        return ''
+
+    def _build_abnormal_item(self, entry: Dict[str, Any], index: int, suffix: str = '') -> Dict[str, Any]:
+        # 【修复】使用 _get_attr 读取
+        hits = self._get_attr(entry, 'escape_hits') or []
+        fields = set()
+        details = []
+        for hit in hits:
+            # hit 可能也是对象
+            f = self._get_attr(hit, 'field', '') or ''
+            fields.add(f.strip())
+            
+            d = self._get_attr(hit, 'display')
+            v = self._get_attr(hit, 'value')
+            details.append(f"{f}={d or v or ''}")
+            
+        return {
+            'anchor': f"ts_{index}{suffix}",
+            'time': self._extract_timestamp_text(entry),
+            'msgType': self._extract_msg_type(entry) or '未知报文',
+            'fields': sorted(list(fields)),
+            'count': len(hits),
+            'details': details,
+        }
+
+    def _collect_abnormal_items(self, log_entries: List[Any]) -> List[Dict[str, Any]]:
+        abnormal_items: List[Dict[str, Any]] = []
+
+        for index, item in enumerate(log_entries):
+            # 【修复】使用 hasattr 检查对象
+            is_transaction = hasattr(item, 'requests') and hasattr(item, 'response')
+            if is_transaction:
+                main_entry = getattr(item, 'latest_request', None)
+                if main_entry and self._get_attr(main_entry, 'escape_hits'):
+                    abnormal_items.append(self._build_abnormal_item(main_entry, index))
+                resp_entry = getattr(item, 'response', None)
+                if resp_entry and self._get_attr(resp_entry, 'escape_hits'):
+                    abnormal_items.append(self._build_abnormal_item(resp_entry, index, '_resp'))
+            else:
+                if self._get_attr(item, 'escape_hits'):
+                    abnormal_items.append(self._build_abnormal_item(item, index))
+
+        return abnormal_items
 
     def _parse_filename_info(self, filename: str) -> Dict[str, str]:
         """从文件名中解析分析信息"""
