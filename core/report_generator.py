@@ -1,9 +1,10 @@
 # core/report_generator.py
+import html
+import json
 import logging
 import os
 from datetime import datetime
 from typing import List, Dict, Any
-import html
 
 
 class ReportGenerator:
@@ -45,6 +46,9 @@ class ReportGenerator:
 
             entry_id_map = {id(entry): i for i, entry in enumerate(raw_log_entries)}
 
+            abnormal_items = self._collect_abnormal_items(log_entries)
+            abnormal_items_json = json.dumps(abnormal_items, ensure_ascii=False).replace('</', '<\\/')
+
             def get_raw_anchor(entry_obj):
                 """辅助函数：根据对象找到原文页面的锚点ID"""
                 if entry_obj is None: return ""
@@ -65,6 +69,7 @@ class ReportGenerator:
                 <title>日志分析报告</title>
                 <script>
                     const ALL_MESSAGE_TYPES = {sorted_msg_types};
+                    const ABNORMAL_ITEMS = {abnormal_items_json};
                 </script>
                 <style>
                     body {{
@@ -205,9 +210,163 @@ class ReportGenerator:
                         transition: all 0.2s;
                     }}
                     .tag:hover {{ background: #dbeafe; }}
-                    
+
                     .tag-remove {{ cursor: pointer; font-size: 14px; opacity: 0.6; line-height: 1; }}
                     .tag-remove:hover {{ opacity: 1; color: #1e3a8a; }}
+
+                    .tag-abnormal {{
+                        background: #fef2f2;
+                        border: 1px solid #fecdd3;
+                        color: #b91c1c;
+                    }}
+
+                    .nav-toggle {{
+                        position: fixed;
+                        left: 10px;
+                        top: 20px;
+                        z-index: 160;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 8px;
+                        padding: 8px 12px;
+                        border-radius: 12px;
+                        border: 1px solid #e5e7eb;
+                        background: #ffffff;
+                        color: #111827;
+                        box-shadow: 0 10px 25px -10px rgba(0,0,0,0.2);
+                        cursor: pointer;
+                        font-weight: 600;
+                        transition: all 0.2s;
+                    }}
+                    .nav-toggle:hover {{
+                        box-shadow: 0 20px 35px -10px rgba(0,0,0,0.25);
+                        transform: translateY(-1px);
+                    }}
+                    .nav-badge {{
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-width: 22px;
+                        height: 22px;
+                        padding: 0 6px;
+                        border-radius: 999px;
+                        background: #fee2e2;
+                        color: #991b1b;
+                        font-size: 12px;
+                        font-weight: 700;
+                        border: 1px solid #fecdd3;
+                    }}
+
+                    .side-nav {{
+                        position: fixed;
+                        left: -360px;
+                        top: 20px;
+                        bottom: 20px;
+                        width: 320px;
+                        background: #ffffff;
+                        border-radius: 16px;
+                        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+                        border: 1px solid #e5e7eb;
+                        padding: 16px;
+                        z-index: 150;
+                        overflow-y: auto;
+                        transition: all 0.3s ease;
+                    }}
+                    body.nav-open .side-nav {{ left: 20px; }}
+                    body.nav-open .nav-toggle {{ left: 350px; }}
+
+                    body.nav-open #filterBar {{ margin-left: 340px; transition: margin-left 0.3s ease; }}
+                    body.nav-open #timestamps {{ margin-left: 340px; transition: margin-left 0.3s ease; }}
+
+                    .side-nav__header {{
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 8px;
+                        margin-bottom: 12px;
+                    }}
+                    .side-nav__title {{
+                        font-size: 16px;
+                        font-weight: 700;
+                        color: #111827;
+                    }}
+                    .side-nav__subtitle {{
+                        font-size: 12px;
+                        color: #6b7280;
+                        margin-top: 2px;
+                    }}
+                    .nav-empty {{
+                        padding: 12px;
+                        border: 1px dashed #e5e7eb;
+                        border-radius: 10px;
+                        color: #6b7280;
+                        background: #f9fafb;
+                        font-size: 13px;
+                    }}
+                    .abnormal-item {{
+                        border: 1px solid #e5e7eb;
+                        border-radius: 12px;
+                        padding: 10px 12px;
+                        margin-bottom: 10px;
+                        background: #fdf2f8;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                    }}
+                    .abnormal-item:hover {{
+                        border-color: #f472b6;
+                        box-shadow: 0 4px 12px -6px rgba(244, 114, 182, 0.45);
+                    }}
+                    .abnormal-item__top {{
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        margin-bottom: 6px;
+                        gap: 6px;
+                    }}
+                    .abnormal-time {{
+                        font-size: 13px;
+                        color: #4b5563;
+                    }}
+                    .abnormal-count {{
+                        background: #fee2e2;
+                        color: #991b1b;
+                        border: 1px solid #fecdd3;
+                        border-radius: 8px;
+                        padding: 2px 8px;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }}
+                    .abnormal-item__meta {{
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 6px;
+                        align-items: center;
+                        color: #111827;
+                        font-weight: 600;
+                    }}
+                    .abnormal-type {{
+                        background: #eef2ff;
+                        color: #4338ca;
+                        border: 1px solid #c7d2fe;
+                        border-radius: 8px;
+                        padding: 2px 8px;
+                        font-size: 12px;
+                    }}
+                    .abnormal-fields {{
+                        color: #6b7280;
+                        font-size: 12px;
+                    }}
+
+                    .flash-highlight {{
+                        animation: flash-animation 2.4s ease-out forwards;
+                        position: relative;
+                        border-color: #ef4444 !important;
+                    }}
+                    @keyframes flash-animation {{
+                        0% {{ background-color: #fee2e2; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.35); }}
+                        50% {{ background-color: #fff1f2; box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25); }}
+                        100% {{ background-color: #ffffff; box-shadow: none; }}
+                    }}
 
                     .btn {{ 
                         height: 36px; 
@@ -358,6 +517,8 @@ class ReportGenerator:
                                 }}
                             }});
                         }}
+
+                        renderAbnormalNav();
                     }}
                     
                     // 保留原有的筛选和时间解析逻辑，不做修改
@@ -554,10 +715,78 @@ class ReportGenerator:
                         elements.forEach(el => el.classList.remove('trans-highlight'));
                     }}
 
+                    function focusAbnormalAnchor(anchor) {{
+                        if (!anchor) return;
+                        const target = document.getElementById(anchor);
+                        if (!target) return;
+                        document.querySelectorAll('.flash-highlight').forEach(el => el.classList.remove('flash-highlight'));
+                        target.classList.add('flash-highlight');
+                        target.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                    }}
+
+                    function toggleAbnormalNav() {{
+                        document.body.classList.toggle('nav-open');
+                    }}
+
+                    function closeAbnormalNav() {{
+                        document.body.classList.remove('nav-open');
+                    }}
+
+                    function renderAbnormalNav() {{
+                        const list = document.getElementById('abnormalList');
+                        const empty = document.getElementById('abnormalEmpty');
+                        const badge = document.getElementById('abnormalCount');
+                        if (badge) badge.textContent = ABNORMAL_ITEMS.length;
+                        if (!list) return;
+                        list.innerHTML = '';
+                        if (!ABNORMAL_ITEMS.length) {{
+                            if (empty) empty.style.display = 'block';
+                            return;
+                        }}
+                        if (empty) empty.style.display = 'none';
+
+                        ABNORMAL_ITEMS.forEach((item) => {{
+                            const div = document.createElement('div');
+                            div.className = 'abnormal-item';
+                            const fieldsText = (item.fields || []).join('、') || '未记录字段';
+                            div.innerHTML = `
+                                <div class="abnormal-item__top">
+                                    <span class="abnormal-time">${{item.time || ''}}</span>
+                                    <span class="abnormal-count">×${{item.count || 0}}</span>
+                                </div>
+                                <div class="abnormal-item__meta">
+                                    <span class="abnormal-type">${{item.msgType || '未知报文'}}</span>
+                                    <span class="abnormal-fields">${{fieldsText}}</span>
+                                </div>
+                            `;
+                            div.title = (item.details || []).join('\n');
+                            div.onclick = () => {{
+                                focusAbnormalAnchor(item.anchor);
+                                closeAbnormalNav();
+                            }};
+                            list.appendChild(div);
+                        }});
+                    }}
+
                     window.onload = init;
                 </script>
             </head>
             <body>
+                <button id="navToggle" class="nav-toggle" onclick="toggleAbnormalNav()">
+                    异常报错
+                    <span id="abnormalCount" class="nav-badge">0</span>
+                </button>
+                <div id="sideNav" class="side-nav">
+                    <div class="side-nav__header">
+                        <div>
+                            <div class="side-nav__title">异常报错</div>
+                            <div class="side-nav__subtitle">解析中命中的异常转义</div>
+                        </div>
+                        <button class="btn" onclick="closeAbnormalNav()">收起</button>
+                    </div>
+                    <div id="abnormalEmpty" class="nav-empty" style="display:none;">暂无异常报错</div>
+                    <div id="abnormalList"></div>
+                </div>
                 <div id="filterBar">
                     <div class="filter-group" style="flex: 1; min-width: 200px;">
                         <span class="filter-label">内容搜索</span>
@@ -673,8 +902,13 @@ class ReportGenerator:
                                 idx = int(s.get('idx', 0))
                                 bg = palette[idx % len(palette)]
                                 parts.append(f'<span class="seg-free" style="background:{bg};color:#1b1f23;">{s.get("text", "")}</span>')
-                        
+
                         return ''.join(parts) + extra_badges
+
+                    def append_abnormal_badge(entry, badges=""):
+                        if entry.get('escape_hits'):
+                            badges = f"{badges} <span class=\"tag tag-abnormal\" title=\"包含异常报错转义\">异常报错</span>"
+                        return badges
 
                     # 构建主行内容
                     extra_badges = ""
@@ -687,6 +921,7 @@ class ReportGenerator:
                         if not has_response:
                             extra_badges += ' <span class="tag" style="background:#f3f4f6;color:#6b7280;">[无回复]</span>'
 
+                    extra_badges = append_abnormal_badge(main_entry, extra_badges)
                     line_html = prefix_html + render_line_content(main_entry, extra_badges)
                     timestamp_ms = int(main_entry['timestamp'].timestamp() * 1000) if main_entry.get('timestamp') else 0
                     
@@ -701,7 +936,7 @@ class ReportGenerator:
                         f.write(f'<div id="retries_{log_id}" style="display:none; margin-left: 20px; border-left: 2px solid #e5e7eb; padding-left: 10px;">\n')
                         # 遍历旧请求（除了最后一个）
                         for r_idx, req in enumerate(item.requests[:-1]):
-                            r_html = render_line_content(req)
+                            r_html = render_line_content(req, append_abnormal_badge(req))
                             f.write(f"""            <div class="timestamp" style="border:none; padding: 4px 0;">
                                     <span style="color:#9ca3af; margin-right:8px;">├─ 重试 {r_idx+1}</span>
                                     {r_html}
@@ -712,7 +947,7 @@ class ReportGenerator:
                     # 如果有回复，写入回复行 (作为独立行但视觉上连接)
                     if is_transaction and has_response:
                         resp_entry = item.response
-                        resp_html = render_line_content(resp_entry)
+                        resp_html = render_line_content(resp_entry, append_abnormal_badge(resp_entry))
                         # 使用 tree-connector 连接
                         f.write(f"""        <div class="timestamp" id="ts_{index}_resp" data-timestamp="{timestamp_ms}" {trans_attr} style="border-top:none; margin-top:-1px; padding-top:4px;">
                                 <div class="resp-container">
@@ -816,6 +1051,64 @@ class ReportGenerator:
         except Exception as e:
             self.logger.error(f"生成HTML报告失败: {str(e)}")
             return None
+
+    def _extract_msg_type(self, entry: Dict[str, Any]) -> str:
+        try:
+            if entry.get('message_type'):
+                return str(entry.get('message_type', '')).strip()
+            for seg in entry.get('segments', []):
+                if seg.get('kind') == 'msg_type':
+                    return str(seg.get('text', '')).strip()
+        except Exception:
+            pass
+        return ''
+
+    def _extract_timestamp_text(self, entry: Dict[str, Any]) -> str:
+        try:
+            ts = entry.get('timestamp')
+            if ts:
+                return ts.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+            for seg in entry.get('segments', []):
+                if seg.get('kind') == 'ts':
+                    return str(seg.get('text', '')).strip()
+        except Exception:
+            pass
+        return ''
+
+    def _build_abnormal_item(self, entry: Dict[str, Any], index: int, suffix: str = '') -> Dict[str, Any]:
+        hits = entry.get('escape_hits') or []
+        fields = sorted({(hit.get('field') or '').strip() for hit in hits if hit.get('field')})
+        details = []
+        for hit in hits:
+            field_name = hit.get('field', '')
+            disp = hit.get('display') or hit.get('value') or ''
+            details.append(f"{field_name}={disp}")
+        return {
+            'anchor': f"ts_{index}{suffix}",
+            'time': self._extract_timestamp_text(entry),
+            'msgType': self._extract_msg_type(entry) or '未知报文',
+            'fields': fields,
+            'count': len(hits),
+            'details': details,
+        }
+
+    def _collect_abnormal_items(self, log_entries: List[Any]) -> List[Dict[str, Any]]:
+        abnormal_items: List[Dict[str, Any]] = []
+
+        for index, item in enumerate(log_entries):
+            is_transaction = hasattr(item, 'requests') and hasattr(item, 'response')
+            if is_transaction:
+                main_entry = item.latest_request
+                if main_entry and main_entry.get('escape_hits'):
+                    abnormal_items.append(self._build_abnormal_item(main_entry, index))
+                resp_entry = getattr(item, 'response', None)
+                if resp_entry and resp_entry.get('escape_hits'):
+                    abnormal_items.append(self._build_abnormal_item(resp_entry, index, '_resp'))
+            else:
+                if item.get('escape_hits'):
+                    abnormal_items.append(self._build_abnormal_item(item, index))
+
+        return abnormal_items
 
     def _parse_filename_info(self, filename: str) -> Dict[str, str]:
         """从文件名中解析分析信息"""
