@@ -68,8 +68,296 @@ class ReportGenerator:
             <head>
                 <title>日志分析报告</title>
                 <script>
-                    const ALL_MESSAGE_TYPES = {sorted_msg_types};
-                    const ABNORMAL_ITEMS = {abnormal_items_json};
+                    (function() {
+                        const ALL_MESSAGE_TYPES = {sorted_msg_types};
+                        const ABNORMAL_ITEMS = {abnormal_items_json} || [];
+                        let selectedMsgTypes = new Set();
+
+                        function init() {
+                            const input = document.getElementById('msgTypeInput');
+                            const dropdown = document.getElementById('msgTypeDropdown');
+
+                            if (input && dropdown) {
+                                input.addEventListener('focus', () => {
+                                    renderDropdown(input.value);
+                                    dropdown.style.display = 'block';
+                                });
+
+                                input.addEventListener('input', (e) => {
+                                    renderDropdown(e.target.value);
+                                    dropdown.style.display = 'block';
+                                });
+
+                                document.addEventListener('click', (e) => {
+                                    if (!e.target.closest('.msg-type-container')) {
+                                        dropdown.style.display = 'none';
+                                    }
+                                });
+                            }
+
+                            renderTags();
+                            applyFilter();
+                            renderAbnormalNav();
+                        }
+
+                        function renderDropdown(filterText) {
+                            const dropdown = document.getElementById('msgTypeDropdown');
+                            if (!dropdown) return;
+                            dropdown.innerHTML = '';
+
+                            const lowerFilter = (filterText || '').toLowerCase();
+                            const filtered = ALL_MESSAGE_TYPES.filter(mt =>
+                                mt.toLowerCase().includes(lowerFilter) && !selectedMsgTypes.has(mt)
+                            );
+
+                            if (filtered.length === 0) {
+                                const div = document.createElement('div');
+                                div.className = 'msg-type-option';
+                                div.style.color = '#9ca3af';
+                                div.style.cursor = 'default';
+                                div.textContent = '无匹配项';
+                                dropdown.appendChild(div);
+                                return;
+                            }
+
+                            filtered.forEach(mt => {
+                                const div = document.createElement('div');
+                                div.className = 'msg-type-option';
+                                div.textContent = mt;
+                                div.onclick = () => addMsgType(mt);
+                                dropdown.appendChild(div);
+                            });
+                        }
+
+                        function addMsgType(mt) {
+                            selectedMsgTypes.add(mt);
+                            renderTags();
+                            const inputEl = document.getElementById('msgTypeInput');
+                            const dropdown = document.getElementById('msgTypeDropdown');
+                            if (inputEl) inputEl.value = '';
+                            if (dropdown) dropdown.style.display = 'none';
+                            applyFilter();
+                        }
+
+                        function removeMsgType(mt) {
+                            selectedMsgTypes.delete(mt);
+                            renderTags();
+                            applyFilter();
+                        }
+
+                        function renderTags() {
+                            const container = document.getElementById('selectedTags');
+                            if (!container) return;
+                            container.innerHTML = '';
+                            selectedMsgTypes.forEach(mt => {
+                                const tag = document.createElement('div');
+                                tag.className = 'tag';
+                                tag.innerHTML = `
+                                ${{mt}}
+                                <span class="tag-remove" onclick="removeMsgType('${{mt}}')">×</span>
+                            `;
+                                container.appendChild(tag);
+                            });
+                        }
+
+                        function applyFilter() {
+                            const qRaw = (document.getElementById('filterInput')?.value || '').trim();
+                            const errBox = document.getElementById('filterError');
+                            if (errBox) errBox.textContent = '';
+
+                            let re = null;
+                            if (qRaw) {
+                                if (qRaw.startsWith('/') && qRaw.lastIndexOf('/') > 0) {
+                                    const last = qRaw.lastIndexOf('/');
+                                    const body = qRaw.slice(1, last);
+                                    const flags = qRaw.slice(last + 1) || 'i';
+                                    try { re = new RegExp(body, flags); } catch (e) { re = null; }
+                                } else {
+                                    try { re = new RegExp(qRaw, 'i'); } catch (e) { re = null; }
+                                }
+                                if (!re && errBox) errBox.textContent = '正则表达式无效';
+                            }
+
+                            const startTimeStr = (document.getElementById('startTime')?.value || '').trim();
+                            const endTimeStr = (document.getElementById('endTime')?.value || '').trim();
+                            const startTime = startTimeStr ? parseTime(startTimeStr) : null;
+                            const endTime = endTimeStr ? parseTime(endTimeStr) : null;
+                            const timeOnlyMode = (startTime !== null && startTime < 0) || (endTime !== null && endTime < 0);
+
+                            const rows = document.querySelectorAll('.timestamp');
+                            rows.forEach((r) => {
+                                let show = true;
+
+                                if (re) {
+                                    const text = (r.textContent || '');
+                                    if (!re.test(text)) show = false;
+                                }
+
+                                if (show && (startTime || endTime)) {
+                                    const rowTimestamp = parseInt(r.getAttribute('data-timestamp') || '0', 10);
+                                    if (rowTimestamp > 0) {
+                                        if (timeOnlyMode) {
+                                            const rowDate = new Date(rowTimestamp);
+                                            const rowTimeOfDay = rowDate.getHours() * 3600000 +
+                                                              rowDate.getMinutes() * 60000 +
+                                                              rowDate.getSeconds() * 1000 +
+                                                              rowDate.getMilliseconds();
+                                            if (startTime && startTime < 0 && rowTimeOfDay < -startTime) show = false;
+                                            if (endTime && endTime < 0 && rowTimeOfDay > -endTime) show = false;
+                                        } else {
+                                            if (startTime && startTime > 0 && rowTimestamp < startTime) show = false;
+                                            if (endTime && endTime > 0 && rowTimestamp > endTime) show = false;
+                                        }
+                                    }
+                                }
+
+                                if (show && selectedMsgTypes.size > 0) {
+                                    const mtSpan = r.querySelector('.seg-msgtype');
+                                    if (!mtSpan) {
+                                        show = false;
+                                    } else {
+                                        const mt = mtSpan.textContent.trim();
+                                        if (!selectedMsgTypes.has(mt)) show = false;
+                                    }
+                                }
+
+                                r.style.display = show ? '' : 'none';
+                            });
+                        }
+
+                        function parseTime(str) {
+                            if (!str || !str.trim()) return null;
+                            let trimmed = str.trim();
+                            trimmed = trimmed.replace('T', ' ');
+
+                            const match1 = trimmed.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})\\s+(\\d{1,2}):(\\d{1,2})(?::(\\d{1,2})(?:\\.(\\d{1,3}))?)?$/);
+                            if (match1) {
+                                const year = parseInt(match1[1], 10);
+                                const month = parseInt(match1[2], 10);
+                                const day = parseInt(match1[3], 10);
+                                const hour = parseInt(match1[4], 10);
+                                const minute = parseInt(match1[5], 10);
+                                const second = match1[6] ? parseInt(match1[6], 10) : 0;
+                                const ms = match1[7] ? parseInt(match1[7], 10) : 0;
+                                return new Date(year, month - 1, day, hour, minute, second, ms).getTime();
+                            }
+
+                            const match2 = trimmed.match(/^(\\d{1,2})-(\\d{1,2})\\s+(\\d{1,2}):(\\d{1,2})(?::(\\d{1,2})(?:\\.(\\d{1,3}))?)?$/);
+                            if (match2) {
+                                const currentYear = new Date().getFullYear();
+                                const month = parseInt(match2[1], 10);
+                                const day = parseInt(match2[2], 10);
+                                const hour = parseInt(match2[3], 10);
+                                const minute = parseInt(match2[4], 10);
+                                const second = match2[5] ? parseInt(match2[5], 10) : 0;
+                                const ms = match2[6] ? parseInt(match2[6], 10) : 0;
+                                return new Date(currentYear, month - 1, day, hour, minute, second, ms).getTime();
+                            }
+
+                            const match3 = trimmed.match(/^(\\d{1,2}):(\\d{1,2})(?::(\\d{1,2})(?:\\.(\\d{1,3}))?)?$/);
+                            if (match3) {
+                                const hour = parseInt(match3[1], 10);
+                                const minute = parseInt(match3[2], 10);
+                                const second = match3[3] ? parseInt(match3[3], 10) : 0;
+                                const ms = match3[4] ? parseInt(match3[4], 10) : 0;
+                                return -(hour * 3600000 + minute * 60000 + second * 1000 + ms);
+                            }
+                            return null;
+                        }
+
+                        function clearFilter() {
+                            const filterInput = document.getElementById('filterInput');
+                            const startEl = document.getElementById('startTime');
+                            const endEl = document.getElementById('endTime');
+                            if (filterInput) filterInput.value = '';
+                            if (startEl) startEl.value = '';
+                            if (endEl) endEl.value = '';
+                            selectedMsgTypes.clear();
+                            renderTags();
+                            applyFilter();
+                        }
+
+                        function filterKey(e) { if (e.key === 'Enter') applyFilter(); }
+
+                        function highlightTransaction(groupId) {
+                            if (!groupId) return;
+                            const elements = document.querySelectorAll(`[data-trans-group="${{groupId}}"]`);
+                            elements.forEach(el => el.classList.add('trans-highlight'));
+                        }
+
+                        function clearHighlight() {
+                            const elements = document.querySelectorAll('.trans-highlight');
+                            elements.forEach(el => el.classList.remove('trans-highlight'));
+                        }
+
+                        function focusAbnormalAnchor(anchor) {
+                            if (!anchor) return;
+                            const target = document.getElementById(anchor);
+                            if (!target) return;
+                            document.querySelectorAll('.flash-highlight').forEach(el => el.classList.remove('flash-highlight'));
+                            target.classList.add('flash-highlight');
+                            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+
+                        function toggleAbnormalNav() {
+                            document.body.classList.toggle('nav-open');
+                        }
+
+                        function closeAbnormalNav() {
+                            document.body.classList.remove('nav-open');
+                        }
+
+                        function renderAbnormalNav() {
+                            const list = document.getElementById('abnormalList');
+                            const empty = document.getElementById('abnormalEmpty');
+                            const badge = document.getElementById('abnormalCount');
+                            if (badge) badge.textContent = ABNORMAL_ITEMS.length;
+                            if (!list) return;
+                            list.innerHTML = '';
+                            if (!ABNORMAL_ITEMS.length) {
+                                if (empty) empty.style.display = 'block';
+                                return;
+                            }
+                            if (empty) empty.style.display = 'none';
+
+                            ABNORMAL_ITEMS.forEach((item) => {
+                                const div = document.createElement('div');
+                                div.className = 'abnormal-item';
+                                const fieldsText = (item.fields || []).join('、') || '未记录字段';
+                                div.innerHTML = `
+                                <div class="abnormal-item__top">
+                                    <span class="abnormal-time">${{item.time || ''}}</span>
+                                    <span class="abnormal-count">×${{item.count || 0}}</span>
+                                </div>
+                                <div class="abnormal-item__meta">
+                                    <span class="abnormal-type">${{item.msgType || '未知报文'}}</span>
+                                    <span class="abnormal-fields">${{fieldsText}}</span>
+                                </div>
+                            `;
+                                div.title = (item.details || []).join('\n');
+                                div.onclick = () => {
+                                    focusAbnormalAnchor(item.anchor);
+                                    closeAbnormalNav();
+                                };
+                                list.appendChild(div);
+                            });
+                        }
+
+                        window.applyFilter = applyFilter;
+                        window.clearFilter = clearFilter;
+                        window.filterKey = filterKey;
+                        window.addMsgType = addMsgType;
+                        window.removeMsgType = removeMsgType;
+                        window.toggleAbnormalNav = toggleAbnormalNav;
+                        window.closeAbnormalNav = closeAbnormalNav;
+                        window.focusAbnormalAnchor = focusAbnormalAnchor;
+
+                        if (document.readyState === 'loading') {
+                            window.addEventListener('DOMContentLoaded', init, { once: true });
+                        } else {
+                            init();
+                        }
+                    })();
                 </script>
                 <style>
                     body {{
