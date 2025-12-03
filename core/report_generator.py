@@ -768,7 +768,7 @@ class ReportGenerator:
                         }});
                     }}
 
-                    window.onload = init;
+                    window.addEventListener('DOMContentLoaded', init);
                 </script>
             </head>
             <body>
@@ -1019,7 +1019,7 @@ class ReportGenerator:
                 </style>
                 <script>
                     // 自动跳转并居中显示的核心逻辑
-                    window.onload = function() {{
+                    window.addEventListener('DOMContentLoaded', function() {{
                         if(location.hash) {{
                             var id = location.hash.replace('#','');
                             var el = document.getElementById(id);
@@ -1029,7 +1029,7 @@ class ReportGenerator:
                                 el.classList.add('flash-highlight');
                             }}
                         }}
-                    }}
+                    }});
                 </script>
             </head>
             <body>
