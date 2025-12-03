@@ -153,8 +153,8 @@ class ReportGenerator:
                                 const tag = document.createElement('div');
                                 tag.className = 'tag';
                                 tag.innerHTML = `
-                                ${{mt}}
-                                <span class="tag-remove" onclick="removeMsgType('${{mt}}')">×</span>
+                                ${mt}
+                                <span class="tag-remove" onclick="removeMsgType('${mt}')">×</span>
                             `;
                                 container.appendChild(tag);
                             });
@@ -281,7 +281,7 @@ class ReportGenerator:
 
                         function highlightTransaction(groupId) {
                             if (!groupId) return;
-                            const elements = document.querySelectorAll(`[data-trans-group="${{groupId}}"]`);
+                            const elements = document.querySelectorAll(`[data-trans-group="${groupId}"]`);
                             elements.forEach(el => el.classList.add('trans-highlight'));
                         }
 
@@ -326,12 +326,12 @@ class ReportGenerator:
                                 const fieldsText = (item.fields || []).join('、') || '未记录字段';
                                 div.innerHTML = `
                                 <div class="abnormal-item__top">
-                                    <span class="abnormal-time">${{item.time || ''}}</span>
-                                    <span class="abnormal-count">×${{item.count || 0}}</span>
+                                    <span class="abnormal-time">${item.time || ''}</span>
+                                    <span class="abnormal-count">×${item.count || 0}</span>
                                 </div>
                                 <div class="abnormal-item__meta">
-                                    <span class="abnormal-type">${{item.msgType || '未知报文'}}</span>
-                                    <span class="abnormal-fields">${{fieldsText}}</span>
+                                    <span class="abnormal-type">${item.msgType || '未知报文'}</span>
+                                    <span class="abnormal-fields">${fieldsText}</span>
                                 </div>
                             `;
                                 div.title = (item.details || []).join('\n');
@@ -859,8 +859,8 @@ class ReportGenerator:
                             const tag = document.createElement('div');
                             tag.className = 'tag';
                             tag.innerHTML = `
-                                ${{mt}}
-                                <span class="tag-remove" onclick="removeMsgType('${{mt}}')">×</span>
+                                ${mt}
+                                <span class="tag-remove" onclick="removeMsgType('${mt}')">×</span>
                             `;
                             container.appendChild(tag);
                         }});
@@ -994,7 +994,7 @@ class ReportGenerator:
                     // Visual Pairing Logic
                     function highlightTransaction(groupId) {{
                         if (!groupId) return;
-                        const elements = document.querySelectorAll(`[data-trans-group="${{groupId}}"]`);
+                        const elements = document.querySelectorAll(`[data-trans-group="${groupId}"]`);
                         elements.forEach(el => el.classList.add('trans-highlight'));
                     }}
 
@@ -1039,12 +1039,12 @@ class ReportGenerator:
                             const fieldsText = (item.fields || []).join('、') || '未记录字段';
                             div.innerHTML = `
                                 <div class="abnormal-item__top">
-                                    <span class="abnormal-time">${{item.time || ''}}</span>
-                                    <span class="abnormal-count">×${{item.count || 0}}</span>
+                                    <span class="abnormal-time">${item.time || ''}</span>
+                                    <span class="abnormal-count">×${item.count || 0}</span>
                                 </div>
                                 <div class="abnormal-item__meta">
-                                    <span class="abnormal-type">${{item.msgType || '未知报文'}}</span>
-                                    <span class="abnormal-fields">${{fieldsText}}</span>
+                                    <span class="abnormal-type">${item.msgType || '未知报文'}</span>
+                                    <span class="abnormal-fields">${fieldsText}</span>
                                 </div>
                             `;
                             div.title = (item.details || []).join('\n');
