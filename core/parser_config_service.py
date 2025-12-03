@@ -104,24 +104,33 @@ class ParserConfigService:
                     continue
                 tgt_fields = tgt_versions[ver].setdefault("Fields", {})
                 src_fields = (ver_cfg.get("Fields") or {})
-                for field, f_cfg in src_fields.items():
-                    if field not in tgt_fields:
-                        new_field = {
-                            "Start": f_cfg.get("Start", 0),
-                            "Length": f_cfg.get("Length", -1),
-                        }
-                        esc = f_cfg.get("Escapes")
-                        if isinstance(esc, dict):
-                            new_field["Escapes"] = deepcopy(esc)
-                        tgt_fields[field] = new_field
-                        continue
-                    tgt_field = tgt_fields[field]
-                    src_esc = (f_cfg.get("Escapes") or {})
-                    if isinstance(src_esc, dict) and src_esc:
-                        tgt_esc = tgt_field.setdefault("Escapes", {})
-                        for k, v in src_esc.items():
-                            if k not in tgt_esc:
-                                tgt_esc[k] = v
+                    for field, f_cfg in src_fields.items():
+                        if field not in tgt_fields:
+                            new_field = {
+                                "Start": f_cfg.get("Start", 0),
+                                "Length": f_cfg.get("Length", -1),
+                            }
+                            esc = f_cfg.get("Escapes")
+                            if isinstance(esc, dict):
+                                new_field["Escapes"] = deepcopy(esc)
+                            esc_tags = f_cfg.get("EscapeTags")
+                            if isinstance(esc_tags, dict):
+                                new_field["EscapeTags"] = deepcopy(esc_tags)
+                            tgt_fields[field] = new_field
+                            continue
+                        tgt_field = tgt_fields[field]
+                        src_esc = (f_cfg.get("Escapes") or {})
+                        if isinstance(src_esc, dict) and src_esc:
+                            tgt_esc = tgt_field.setdefault("Escapes", {})
+                            for k, v in src_esc.items():
+                                if k not in tgt_esc:
+                                    tgt_esc[k] = v
+                        src_esc_tags = (f_cfg.get("EscapeTags") or {})
+                        if isinstance(src_esc_tags, dict) and src_esc_tags:
+                            tgt_esc_tags = tgt_field.setdefault("EscapeTags", {})
+                            for k, v in src_esc_tags.items():
+                                if k not in tgt_esc_tags:
+                                    tgt_esc_tags[k] = deepcopy(v)
         return result
 
     def _build_config_tree(self, config: Dict[str, Any], factory: str, system: str) -> List[Dict[str, Any]]:
@@ -160,6 +169,7 @@ class ParserConfigService:
                     }
 
                     escapes = field_config.get("Escapes", {})
+                    escape_tags = field_config.get("EscapeTags", {})
                     for escape_key, escape_value in escapes.items():
                         escape_node = {
                             "type": "escape",
@@ -169,6 +179,7 @@ class ParserConfigService:
                             "parent": message_type,
                             "version": version,
                             "field": field,
+                            "tags": escape_tags.get(escape_key, []),
                         }
                         field_node["children"].append(escape_node)
 

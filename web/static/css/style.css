@@ -749,6 +749,19 @@ tbody tr:hover {
   color: #a16207;
 }
 
+.escape-tag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  width: fit-content;
+}
+
 /* ======================= Hero + Panel Enhancements ======================= */
 .panel-hero {
   display: flex;
