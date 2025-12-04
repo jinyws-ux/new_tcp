@@ -21,6 +21,12 @@ const TYPE_LABELS = {
   field: '字段',
   escape: '转义',
 };
+const ESCAPE_TAGS = {
+  ABNORMAL: 'abnormal_error',
+};
+const ESCAPE_TAG_LABELS = {
+  [ESCAPE_TAGS.ABNORMAL]: '异常报错',
+};
 const clipboardState = {
   type: null,
   label: '',
@@ -38,6 +44,42 @@ const cssEscape = (value) => {
 // 工具
 const qs = (sel, scope = document) => scope.querySelector(sel);
 const qsa = (sel, scope = document) => Array.from(scope.querySelectorAll(sel));
+
+function normalizeTags(tags) {
+  return Array.isArray(tags) ? tags.filter((t) => t && typeof t === 'string') : [];
+}
+
+function ensureFieldRef(mt, ver, fd, cfg = workingConfig) {
+  return cfg?.[mt]?.Versions?.[ver]?.Fields?.[fd] || null;
+}
+
+function readEscapeMeta(mt, ver, fd, key) {
+  const fieldRef = ensureFieldRef(mt, ver, fd);
+  const val = fieldRef?.Escapes?.[key];
+  const tags = normalizeTags(fieldRef?.EscapeTags?.[key]);
+  return { value: val, tags };
+}
+
+function setEscapeEntry(fieldRef, key, value, tags = []) {
+  if (!fieldRef) return;
+  if (!fieldRef.Escapes) fieldRef.Escapes = {};
+  fieldRef.Escapes[key] = value;
+
+  const normalized = normalizeTags(tags);
+  if (normalized.length) {
+    if (!fieldRef.EscapeTags) fieldRef.EscapeTags = {};
+    fieldRef.EscapeTags[key] = normalized;
+  } else if (fieldRef.EscapeTags) {
+    delete fieldRef.EscapeTags[key];
+    if (!Object.keys(fieldRef.EscapeTags).length) delete fieldRef.EscapeTags;
+  }
+}
+
+function collectEscapeTagsFromForm(scope = document) {
+  const tags = [];
+  if (scope.querySelector('#escape-tag-abnormal')?.checked) tags.push(ESCAPE_TAGS.ABNORMAL);
+  return tags;
+}
 
 function selectHasOption(sel, val) {
   if (!sel || val === undefined || val === null) return false;
@@ -626,7 +668,11 @@ function buildTreeNode(node) {
     const hasEscape = node.children && node.children.length ? ' · 转义' : '';
     meta = `<span class="meta">起点 ${startText} / 长度 ${lenText}${hasEscape}</span>`;
   } else if (node.type === 'escape') {
-    meta = `<span class="meta">→ ${escapeHtml(String(node.value ?? ''))}</span>`;
+    const tagList = normalizeTags(node.tags || node.escapeTags);
+    const tagBadge = tagList.includes(ESCAPE_TAGS.ABNORMAL)
+      ? '<span class="escape-tag-badge">异常报错</span>'
+      : '';
+    meta = `${tagBadge}<span class="meta">→ ${escapeHtml(String(node.value ?? ''))}</span>`;
   } else if (node.description && node.type !== 'message_type' && node.type !== 'version') {
     meta = `<span class="meta">${escapeHtml(node.description)}</span>`;
   }
@@ -711,12 +757,12 @@ function copyField(mt, ver, field) {
 }
 
 function copyEscape(mt, ver, field, key) {
-  const data = workingConfig?.[mt]?.Versions?.[ver]?.Fields?.[field]?.Escapes?.[key];
-  if (data === undefined) {
+  const meta = readEscapeMeta(mt, ver, field, key);
+  if (meta.value === undefined) {
     showMessage('error', '未找到转义项', 'parser-config-messages');
     return;
   }
-  setClipboard('escape', `${field} → ${key}`, data, { messageType: mt, version: ver, field, escapeKey: key });
+  setClipboard('escape', `${field} → ${key}`, { value: meta.value, tags: meta.tags }, { messageType: mt, version: ver, field, escapeKey: key });
 }
 
 async function pasteMessageType() {
@@ -819,6 +865,9 @@ async function pasteEscape(targetMt, targetVer, targetField) {
     showMessage('warning', '剪贴板中没有转义', 'parser-config-messages');
     return;
   }
+  const clip = clipboardState.data;
+  const value = (clip && typeof clip === 'object' && 'value' in clip) ? clip.value : clip;
+  const tags = (clip && typeof clip === 'object' && Array.isArray(clip.tags)) ? clip.tags : [];
   const escMap = workingConfig?.[targetMt]?.Versions?.[targetVer]?.Fields?.[targetField]?.Escapes || {};
   const base = clipboardState.meta?.escapeKey || '新转义';
   const suggested = suggestName(base, Object.keys(escMap));
@@ -828,13 +877,12 @@ async function pasteEscape(targetMt, targetVer, targetField) {
     showMessage('error', '该转义键已存在', 'parser-config-messages');
     return;
   }
-  const path = `${targetMt}.Versions.${targetVer}.Fields.${targetField}.Escapes.${newKey}`;
   try {
-    await postJSON('/api/update-parser-config', {
-      factory: workingFactory,
-      system: workingSystem,
-      updates: { [path]: deepCopy(clipboardState.data) },
-    });
+    const clone = cloneConfig(workingConfig);
+    const fieldRef = ensureFieldRef(targetMt, targetVer, targetField, clone);
+    if (!fieldRef) throw new Error('未找到目标字段');
+    setEscapeEntry(fieldRef, newKey, value, tags);
+    await saveFullConfig(clone, { silent: true });
     showMessage('success', '转义已粘贴', 'parser-config-messages');
     await refreshFullConfig();
     await refreshTree();
@@ -1005,7 +1053,8 @@ function renderEscapeEditor(node) {
   const box = qs('#full-layers-container');
   if (!box) return;
   const { messageType: mt, version: ver, field: fd, escapeKey: key } = node;
-  const value = workingConfig?.[mt]?.Versions?.[ver]?.Fields?.[fd]?.Escapes?.[key];
+  const { value, tags } = readEscapeMeta(mt, ver, fd, key);
+  const isAbnormal = tags.includes(ESCAPE_TAGS.ABNORMAL);
   box.innerHTML = `
     <h4><i class="fas fa-exchange-alt"></i> 转义：${escapeHtml(mt)} / ${escapeHtml(ver)} / ${escapeHtml(fd)} / ${escapeHtml(key)}</h4>
     <div class="form-group">
@@ -1015,6 +1064,11 @@ function renderEscapeEditor(node) {
     <div class="form-group">
       <label>转义后值</label>
       <input id="escape-value-input" type="text" value="${value == null ? '' : escapeAttr(String(value))}">
+    </div>
+    <div class="form-group">
+      <label>标签（用于后续报告联动）</label>
+      <label class="checkbox-inline"><input id="escape-tag-abnormal" type="checkbox" ${isAbnormal ? 'checked' : ''}> 标记为异常报错</label>
+      <p class="form-hint">勾选后可在解析结果中额外提示此转义对应的异常状态。</p>
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" id="btn-save-escape"><i class="fas fa-save"></i> 保存</button>
@@ -1156,27 +1210,25 @@ async function saveEscapeValue(mt, ver, fd, key) {
   const value = qs('#escape-value-input')?.value ?? '';
   const newKey = (qs('#escape-key-input')?.value || '').trim() || key;
   const needsRename = newKey !== key;
+  const scope = qs('#full-layers-container') || document;
+  const tags = collectEscapeTagsFromForm(scope);
   try {
+    const clone = cloneConfig(workingConfig);
+    const fieldRef = ensureFieldRef(mt, ver, fd, clone);
+    if (!fieldRef) throw new Error('转义不存在');
+    if (needsRename && fieldRef.Escapes?.[newKey]) throw new Error('转义键已存在');
+
     if (needsRename) {
-      const clone = cloneConfig(workingConfig);
-      const escMap = clone?.[mt]?.Versions?.[ver]?.Fields?.[fd]?.Escapes;
-      if (!escMap || !Object.prototype.hasOwnProperty.call(escMap, key)) {
-        throw new Error('转义不存在');
+      if (fieldRef.Escapes && Object.prototype.hasOwnProperty.call(fieldRef.Escapes, key)) {
+        delete fieldRef.Escapes[key];
       }
-      if (Object.prototype.hasOwnProperty.call(escMap, newKey)) {
-        throw new Error('转义键已存在');
+      if (fieldRef.EscapeTags && Object.prototype.hasOwnProperty.call(fieldRef.EscapeTags, key)) {
+        delete fieldRef.EscapeTags[key];
       }
-      delete escMap[key];
-      escMap[newKey] = value;
-      await saveFullConfig(clone);
-    } else {
-      const base = `${mt}.Versions.${ver}.Fields.${fd}.Escapes.${key}`;
-      await postJSON('/api/update-parser-config', {
-        factory: workingFactory,
-        system: workingSystem,
-        updates: { [base]: value }
-      });
     }
+
+    setEscapeEntry(fieldRef, newKey, value, tags);
+    await saveFullConfig(clone, { silent: true });
     showMessage('success', '转义已保存', 'parser-config-messages');
     await refreshFullConfig();
     await refreshTree();
@@ -1194,6 +1246,10 @@ async function deleteEscape(mt, ver, fd, key, opts = {}) {
     throw new Error('未找到转义项');
   }
   delete escMap[key];
+  const tagMap = clone?.[mt]?.Versions?.[ver]?.Fields?.[fd]?.EscapeTags;
+  if (tagMap && Object.prototype.hasOwnProperty.call(tagMap, key)) {
+    delete tagMap[key];
+  }
   await saveFullConfig(clone);
   showMessage('success', '已删除转义', 'parser-config-messages');
   await refreshFullConfig();
@@ -1218,13 +1274,17 @@ function showAddEscapeModal(mt, ver, fd) {
     if (key == null || key === '') return;
     const val = prompt('转义后值：', '');
     if (val == null) return;
-    submitEscapeRaw(fallbackMt, fallbackVer, fallbackField, key, val);
+    const markAbnormal = confirm('是否为该转义标记“异常报错”？');
+    const tags = markAbnormal ? [ESCAPE_TAGS.ABNORMAL] : [];
+    submitEscapeRaw(fallbackMt, fallbackVer, fallbackField, key, val, tags);
     return;
   }
   escapeModalDefaults.messageType = mt || escapeModalDefaults.messageType || '';
   escapeModalDefaults.version = ver || escapeModalDefaults.version || '';
   escapeModalDefaults.field = fd || escapeModalDefaults.field || '';
   rebuildEscapeModalOptions({ ...escapeModalDefaults });
+  const tagInput = modal.querySelector('#escape-tag-abnormal');
+  if (tagInput) tagInput.checked = false;
   modal.style.display = 'block';
   qs('#escape-original')?.focus();
 }
@@ -1304,17 +1364,21 @@ function handleEscapeFieldChange(e) {
   if (submitBtn) submitBtn.disabled = !escapeModalDefaults.field;
 }
 
-async function submitEscapeRaw(mt, ver, fd, key, val, opts = {}) {
+async function submitEscapeRaw(mt, ver, fd, key, val, tags = [], opts = {}) {
   if (!fd) {
     showMessage('error', '请选择要添加转义的字段', 'parser-config-messages');
     return;
   }
   try {
-    await postJSON('/api/add-escape', {
-      factory: workingFactory, system: workingSystem,
-      message_type: mt, version: ver, field: fd,
-      escape_key: key, escape_value: val
-    });
+    const clone = cloneConfig(workingConfig);
+    const fieldRef = ensureFieldRef(mt, ver, fd, clone);
+    if (!fieldRef) throw new Error('未找到字段，无法添加转义');
+    if (!fieldRef.Escapes) fieldRef.Escapes = {};
+    if (Object.prototype.hasOwnProperty.call(fieldRef.Escapes, key)) {
+      throw new Error('转义键已存在');
+    }
+    setEscapeEntry(fieldRef, key, val ?? '', tags);
+    await saveFullConfig(clone, { silent: true });
     showMessage('success', '转义已添加', 'parser-config-messages');
     await refreshFullConfig();
     await refreshTree();
@@ -1336,12 +1400,14 @@ function submitEscapeForm() {
   const key = qs('#escape-original')?.value?.trim();
   const val = qs('#escape-target')?.value?.trim();
   const fd = qs('#escape-field')?.value?.trim();
+  const modal = qs('#add-escape-modal');
+  const tags = collectEscapeTagsFromForm(modal || document);
   if (!mt || !ver || !key || !fd) {
     showMessage('error', '请完整填写转义信息', 'parser-config-messages');
     return;
   }
   hideAddEscapeModal();
-  submitEscapeRaw(mt, ver, fd, key, val, { focusEscape: true });
+  submitEscapeRaw(mt, ver, fd, key, val, tags, { focusEscape: true });
 }
 
 function hideAddEscapeModal() {
@@ -1369,7 +1435,7 @@ async function addEscapeInline(mt, ver, fd) {
   }
   if (!fieldRef.Escapes) fieldRef.Escapes = {};
   const key = suggestName('新转义', Object.keys(fieldRef.Escapes));
-  fieldRef.Escapes[key] = '';
+  setEscapeEntry(fieldRef, key, '', []);
   try {
     await saveFullConfig(clone, { silent: true });
     await refreshFullConfig();
@@ -1583,7 +1649,10 @@ function buildJsonLinesFromConfig(config) {
           fieldKeys.forEach((fdKey, fdIndex) => {
             const field = fields[fdKey] || {};
             const escapes = field.Escapes || {};
+            const escapeTags = field.EscapeTags || {};
             const escapeKeys = Object.keys(escapes);
+            const escapeTagKeys = Object.keys(escapeTags);
+            const hasEscapeTags = escapeTagKeys.length > 0;
             const fieldPath = buildNodePath({ type: 'field', messageType: mtKey, version: verKey, field: fdKey });
             pushLine(`"${fdKey}": {`, 5, fieldPath);
             pushLine(`"Start": ${formatJsonValue(field.Start ?? 0)},`, 6);
@@ -1595,9 +1664,17 @@ function buildJsonLinesFromConfig(config) {
                 const suffix = escIndex === escapeKeys.length - 1 ? '' : ',';
                 pushLine(`"${escKey}": ${formatJsonValue(escapes[escKey])}${suffix}`, 7, escPath);
               });
-              pushLine('}', 6);
+              pushLine(`}${hasEscapeTags ? ',' : ''}`, 6);
             } else {
-              pushLine('"Escapes": {}', 6);
+              pushLine(`"Escapes": {}${hasEscapeTags ? ',' : ''}`, 6);
+            }
+            if (hasEscapeTags) {
+              pushLine('"EscapeTags": {', 6);
+              escapeTagKeys.forEach((tagKey, tagIdx) => {
+                const suffix = tagIdx === escapeTagKeys.length - 1 ? '' : ',';
+                pushLine(`"${tagKey}": ${formatJsonValue(escapeTags[tagKey])}${suffix}`, 7);
+              });
+              pushLine('}', 6);
             }
             const fieldSuffix = fdIndex === fieldKeys.length - 1 ? '' : ',';
             pushLine(`}${fieldSuffix}`, 5);
