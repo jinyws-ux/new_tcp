@@ -625,8 +625,9 @@ function buildTreeNode(node) {
   if (node.type === 'field') {
     const lenText = node.length == null ? '到结尾' : node.length;
     const startText = node.start == null ? 0 : node.start;
+    const orderText = (node.order == null ? '' : ` · 序号 ${node.order}`);
     const hasEscape = node.children && node.children.length ? ' · 转义' : '';
-    meta = `<span class="meta">起点 ${startText} / 长度 ${lenText}${hasEscape}</span>`;
+    meta = `<span class="meta">起点 ${startText} / 长度 ${lenText}${orderText}${hasEscape}</span>`;
   } else if (node.type === 'escape') {
     meta = `<span class="meta">→ ${escapeHtml(String(node.value ?? ''))}</span>`;
   } else if (node.description && node.type !== 'message_type' && node.type !== 'version') {
@@ -935,6 +936,13 @@ function renderEditorFor(node) {
         <label>版本号</label>
         <input id="ver-name" type="text" value="${escapeAttr(ver)}">
       </div>
+      <div class="form-group">
+        <label>字段顺序</label>
+        <div id="field-order-list" class="config-list"></div>
+        <div class="parser-card-actions parser-card-actions--bottom">
+          <button class="btn btn-primary btn-sm" id="btn-save-field-order"><i class="fas fa-save"></i> 保存顺序</button>
+        </div>
+      </div>
       <div class="parser-card-actions parser-card-actions--bottom">
         <button class="btn btn-primary" id="btn-save-ver"><i class="fas fa-save"></i> 保存版本</button>
         <button class="btn btn-danger" id="btn-del-ver"><i class="fas fa-trash"></i> 删除版本</button>
@@ -945,6 +953,8 @@ function renderEditorFor(node) {
     qs('#btn-add-field')?.addEventListener('click', () => addFieldInline(mt, ver));
     qs('#btn-paste-field')?.addEventListener('click', () => pasteField(mt, ver));
     qs('#btn-add-field-history')?.addEventListener('click', () => openFieldHistoryDropdown(mt, ver));
+    setupFieldOrderList(mt, ver);
+    qs('#btn-save-field-order')?.addEventListener('click', () => saveFieldOrder(mt, ver));
     focusPreviewPath(nodePath);
     return;
   }
@@ -974,6 +984,10 @@ function renderEditorFor(node) {
         <div class="form-group">
           <label>Length（留空表示到结尾）</label>
           <input id="fd-length" type="number" min="-1" value="${fcfg.Length == null ? '' : escapeAttr(fcfg.Length)}" placeholder="空 = 到结尾">
+        </div>
+        <div class="form-group">
+          <label>显示顺序（可选）</label>
+          <input id="fd-order" type="number" min="0" value="${fcfg.Order == null ? '' : escapeAttr(fcfg.Order)}" placeholder="1,2,3...">
         </div>
       </div>
       <div class="parser-card-actions parser-card-actions--bottom">
@@ -1088,6 +1102,8 @@ async function saveField(mt, ver, fd) {
   const start = parseInt(qs('#fd-start')?.value ?? '0', 10);
   const lenRaw = (qs('#fd-length')?.value ?? '').trim();
   const length = (lenRaw === '') ? null : parseInt(lenRaw, 10);
+  const orderRaw = (qs('#fd-order')?.value ?? '').trim();
+  const orderVal = orderRaw === '' ? null : parseInt(orderRaw, 10);
 
   const newFieldName = (qs('#fd-name')?.value || '').trim() || fd;
   const startValue = Number.isNaN(start) ? 0 : start;
@@ -1103,6 +1119,7 @@ async function saveField(mt, ver, fd) {
       const fieldData = deepCopy(verObj.Fields[fd]);
       fieldData.Start = startValue;
       fieldData.Length = lengthValue;
+      if (orderVal !== null && !Number.isNaN(orderVal)) fieldData.Order = orderVal;
       verObj.Fields[newFieldName] = fieldData;
       delete verObj.Fields[fd];
       await saveFullConfig(clone);
@@ -1111,6 +1128,7 @@ async function saveField(mt, ver, fd) {
       const updates = {};
       updates[`${base}.Start`] = startValue;
       updates[`${base}.Length`] = lengthValue;
+      if (orderVal !== null && !Number.isNaN(orderVal)) updates[`${base}.Order`] = orderVal;
       await postJSON('/api/update-parser-config', {
         factory: workingFactory,
         system: workingSystem,
@@ -1832,6 +1850,9 @@ function buildJsonLinesFromConfig(config) {
             pushLine(`"${fdKey}": {`, 5, fieldPath);
             pushLine(`"Start": ${formatJsonValue(field.Start ?? 0)},`, 6);
             pushLine(`"Length": ${formatJsonValue(field.Length ?? null)},`, 6);
+            if (field.Order !== undefined) {
+              pushLine(`"Order": ${formatJsonValue(field.Order ?? null)},`, 6);
+            }
             if (escapeKeys.length) {
               pushLine('"Escapes": {', 6);
               escapeKeys.forEach((escKey, escIndex) => {
@@ -2058,4 +2079,80 @@ if (typeof window !== 'undefined') {
   window.submitVersionForm = submitVersionForm;
   window.submitFieldForm = submitFieldForm;
   window.submitEscapeForm = submitEscapeForm;
+}
+function setupFieldOrderList(mt, ver) {
+  const box = qs('#field-order-list');
+  if (!box) return;
+  const fieldsObj = workingConfig?.[mt]?.Versions?.[ver]?.Fields || {};
+  const entries = Object.entries(fieldsObj).map(([name, cfg], idx) => ({
+    name,
+    start: Number(cfg.Start ?? 0),
+    length: cfg.Length == null ? -1 : Number(cfg.Length),
+    order: cfg.Order == null ? null : Number(cfg.Order),
+    idx
+  }));
+  entries.sort((a, b) => {
+    const ao = a.order == null ? a.idx : a.order;
+    const bo = b.order == null ? b.idx : b.order;
+    return ao - bo;
+  });
+  let state = entries;
+  const render = () => {
+    box.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    state.forEach((item, i) => {
+      const row = document.createElement('div');
+      row.className = 'config-item config-item--slim';
+      row.draggable = true;
+      row.dataset.index = String(i);
+      row.innerHTML = `
+        <div class="config-info">
+          <div class="config-compact-title">
+            <h3>${escapeHtml(item.name)}</h3>
+            <span class="config-chip">${i + 1}</span>
+          </div>
+          <div class="config-compact-subline">Start ${item.start} / Len ${item.length === -1 ? '到结尾' : item.length}</div>
+        </div>
+      `;
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', String(i));
+      });
+      row.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const from = Number(e.dataTransfer.getData('text/plain'));
+        const to = Number(row.dataset.index || '0');
+        if (Number.isNaN(from) || Number.isNaN(to) || from === to) return;
+        const moved = state.splice(from, 1)[0];
+        state.splice(to, 0, moved);
+        render();
+      });
+      frag.appendChild(row);
+    });
+    box.appendChild(frag);
+  };
+  render();
+  box._getOrder = () => state.map((it, i) => ({ name: it.name, order: i + 1 }));
+}
+
+async function saveFieldOrder(mt, ver) {
+  const box = qs('#field-order-list');
+  if (!box || typeof box._getOrder !== 'function') return;
+  const list = box._getOrder();
+  const updates = {};
+  list.forEach(({ name, order }) => {
+    const base = `${mt}.Versions.${ver}.Fields.${name}.Order`;
+    updates[base] = order;
+  });
+  try {
+    await postJSON('/api/update-parser-config', { factory: workingFactory, system: workingSystem, updates });
+    showMessage('success', '字段顺序已保存', 'parser-config-messages');
+    await refreshFullConfig();
+    await refreshTree();
+    renderEditorFor({ type: 'version', messageType: mt, version: ver });
+  } catch (e) {
+    showMessage('error', '保存顺序失败：' + e.message, 'parser-config-messages');
+  }
 }

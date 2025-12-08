@@ -69,8 +69,12 @@ class LogParser:
                 fields_config = msg_config.get('Fields', {})
 
             # 解析字段
+            # 按 Order 排序（缺省使用定义顺序）
             field_values = {}
-            for field, field_cfg in fields_config.items():
+            items = list(fields_config.items())
+            indexed = [(fname, fcfg, idx) for idx, (fname, fcfg) in enumerate(items)]
+            sorted_items = sorted(indexed, key=lambda t: (t[1].get('Order', t[2])))
+            for field, field_cfg, _ in sorted_items:
                 try:
                     start = field_cfg['Start']
                     length = field_cfg.get('Length', -1)
@@ -128,8 +132,12 @@ class LogParser:
                     fields_config = msg_config['Versions'][version].get('Fields', {})
                 else:
                     fields_config = msg_config.get('Fields', {})
+            # 按 Order 排序（缺省使用定义顺序）
             idx = 0
-            for field, field_cfg in fields_config.items():
+            items = list(fields_config.items())
+            indexed = [(fname, fcfg, i) for i, (fname, fcfg) in enumerate(items)]
+            sorted_items = sorted(indexed, key=lambda t: (t[1].get('Order', t[2])))
+            for field, field_cfg, _ in sorted_items:
                 start = field_cfg.get('Start', 0)
                 length = field_cfg.get('Length', -1)
                 if start < 0 or len(content) < start:

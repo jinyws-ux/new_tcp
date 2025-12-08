@@ -7,17 +7,20 @@
           "Data": {
             "Start": 128,
             "Length": -1,
-            "Escapes": {}
+            "Escapes": {},
+            "Order": 2
           },
           "SeqNo": {
             "Start": 122,
             "Length": 6,
-            "Escapes": {}
+            "Escapes": {},
+            "Order": 1
           },
           "VIN_NO": {
             "Start": 115,
             "Length": 7,
-            "Escapes": {}
+            "Escapes": {},
+            "Order": 3
           }
         }
       }

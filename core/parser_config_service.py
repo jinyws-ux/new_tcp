@@ -155,6 +155,7 @@ class ParserConfigService:
                         "version": version,
                         "start": field_config.get("Start", 0),
                         "length": field_config.get("Length", -1),
+                        "order": field_config.get("Order"),
                         "has_escapes": bool(field_config.get("Escapes")),
                         "children": [],
                     }

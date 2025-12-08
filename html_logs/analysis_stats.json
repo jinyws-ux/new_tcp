@@ -157,5 +157,58 @@
         "output_items": 1
       }
     ]
+  },
+  {
+    "timestamp": "20251208_232933",
+    "factory": "DaDong",
+    "system": "OSM",
+    "log_files": [
+      "tcp_trace.400"
+    ],
+    "log_file_count": 1,
+    "log_entry_count": 13,
+    "options": {
+      "generate_html": true,
+      "generate_original_log": true,
+      "generate_sorted_log": true
+    },
+    "stages": [
+      {
+        "stage": "读取日志文件",
+        "duration_ms": 0.22,
+        "input_items": 1,
+        "output_items": 51
+      },
+      {
+        "stage": "解析日志条目",
+        "duration_ms": 3.04,
+        "input_items": 51,
+        "output_items": 13
+      },
+      {
+        "stage": "匹配请求-回复",
+        "duration_ms": 0.05,
+        "input_items": 13,
+        "output_items": 6
+      },
+      {
+        "stage": "生成HTML报告",
+        "duration_ms": 1.66,
+        "input_items": 6,
+        "output_items": 1
+      },
+      {
+        "stage": "输出文本日志",
+        "duration_ms": 0.57,
+        "input_items": 13,
+        "output_items": 1
+      },
+      {
+        "stage": "输出排序日志",
+        "duration_ms": 0.48,
+        "input_items": 13,
+        "output_items": 1
+      }
+    ]
   }
 ]
