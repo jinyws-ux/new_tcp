@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from typing import Any, Dict, List
+from datetime import datetime
 import webbrowser
 import subprocess
 import platform
@@ -697,6 +698,11 @@ def add_field():
         success = parser_config_manager.save_config(factory, system, config)
         if success:
             logger.info(f"成功添加字段: {field}")
+            try:
+                esc = version_config['Fields'][field].get('Escapes') or {}
+                _add_field_history(factory, system, field, start, (length if length != -1 else None), esc)
+            except Exception as e:
+                logger.warning(f"更新字段历史失败: {e}")
             return jsonify({'success': True, 'message': '字段添加成功'})
         else:
             return jsonify({'success': False, 'error': '添加字段失败'}), 500
@@ -1443,3 +1449,115 @@ if __name__ == '__main__':
     print(f"服务器配置文件: {SERVER_CONFIGS_FILE}")
     print(f"访问地址: http://127.0.0.1:5000")
     app.run(host='127.0.0.1', port=5000, debug=True)
+# 字段历史存储
+def _field_history_file(factory: str, system: str) -> str:
+    cfg_path = parser_config_manager.get_config_path(factory, system)
+    base_dirname = os.path.dirname(cfg_path)
+    base_filename = os.path.splitext(os.path.basename(cfg_path))[0]
+    return os.path.join(base_dirname, f"{base_filename}.fields_history.json")
+
+def _read_field_history(factory: str, system: str) -> List[Dict[str, Any]]:
+    path = _field_history_file(factory, system)
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+        except Exception:
+            pass
+    return []
+
+def _write_field_history(factory: str, system: str, items: List[Dict[str, Any]]) -> None:
+    path = _field_history_file(factory, system)
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(items, f, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        logger.warning(f"写入字段历史失败: {exc}")
+
+def _add_field_history(factory: str, system: str, name: str, start: int, length: Any, escapes: Dict[str, Any] = None):
+    items = _read_field_history(factory, system)
+    key = f"{name}|{start}|{length if length is not None else -1}"
+    now = datetime.utcnow().isoformat() + 'Z'
+    found = False
+    for it in items:
+        it_key = f"{it.get('name','')}|{int(it.get('start',0))}|{int(it.get('length',-1))}"
+        if it_key == key:
+            it['usageCount'] = int(it.get('usageCount', 0)) + 1
+            it['lastUsed'] = now
+            if escapes and isinstance(escapes, dict):
+                # 合并Escapes但不覆盖已有键
+                it.setdefault('escapes', {})
+                for k, v in escapes.items():
+                    if k not in it['escapes']:
+                        it['escapes'][k] = v
+            found = True
+            break
+    if not found:
+        items.append({
+            'name': name,
+            'start': int(start),
+            'length': int(length if length is not None else -1),
+            'usageCount': 1,
+            'lastUsed': now,
+            'escapes': escapes or {}
+        })
+    _write_field_history(factory, system, items)
+@app.route('/api/parser-field-history', methods=['GET'])
+def get_parser_field_history():
+    try:
+        factory = request.args.get('factory')
+        system = request.args.get('system')
+        if not factory or not system:
+            return jsonify({'success': False, 'error': '缺少厂区或系统参数'}), 400
+
+        cfg = parser_config_manager.load_config(factory, system) or {}
+        agg_map: Dict[str, Dict[str, Any]] = {}
+
+        # 先聚合当前配置
+        for mt, mt_obj in (cfg.items() if isinstance(cfg, dict) else []):
+            versions = (mt_obj or {}).get('Versions') or {}
+            for ver, ver_obj in versions.items():
+                fields = (ver_obj or {}).get('Fields') or {}
+                for name, f in fields.items():
+                    start = int((f or {}).get('Start', 0))
+                    length = (f or {}).get('Length')
+                    length_val = -1 if length is None else int(length)
+                    key = f"{name}|{start}|{length_val}"
+                    esc = (f or {}).get('Escapes') or {}
+                    if key not in agg_map:
+                        agg_map[key] = {'name': name, 'start': start, 'length': length_val, 'usageCount': 1, 'escapes': esc}
+                    else:
+                        agg_map[key]['usageCount'] += 1
+
+        # 再合并历史文件
+        hist_items = _read_field_history(factory, system)
+        for it in hist_items:
+            name = it.get('name') or ''
+            start = int(it.get('start', 0))
+            length_val = int(it.get('length', -1))
+            key = f"{name}|{start}|{length_val}"
+            if key in agg_map:
+                agg_map[key]['usageCount'] += int(it.get('usageCount', 1))
+                # 合并Escapes但不覆盖已有键
+                if isinstance(it.get('escapes'), dict):
+                    agg_map[key].setdefault('escapes', {})
+                    for k, v in it['escapes'].items():
+                        if k not in agg_map[key]['escapes']:
+                            agg_map[key]['escapes'][k] = v
+            else:
+                agg_map[key] = {
+                    'name': name,
+                    'start': start,
+                    'length': length_val,
+                    'usageCount': int(it.get('usageCount', 1)),
+                    'escapes': it.get('escapes') or {}
+                }
+
+        items = list(agg_map.values())
+        items.sort(key=lambda x: (-int(x.get('usageCount', 0)), x.get('name', '')))
+        return jsonify({'success': True, 'items': items})
+    except Exception as e:
+        logger.error(f"获取历史字段失败: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500

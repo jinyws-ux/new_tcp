@@ -83,4 +83,9 @@ export const api = {
   },
   saveParserConfig: ({ factory, system, config }) => post('/api/save-parser-config', { factory, system, config }),
   updateParserConfig: ({ factory, system, updates }) => post('/api/update-parser-config', { factory, system, updates }),
+  async fetchFieldHistory(factory, system) {
+    const data = await get(`/api/parser-field-history?factory=${encodeURIComponent(factory)}&system=${encodeURIComponent(system)}`);
+    const res = ensureSuccess(data, '加载历史字段失败');
+    return res.items || [];
+  },
 };

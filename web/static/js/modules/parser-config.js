@@ -29,6 +29,8 @@ const clipboardState = {
 };
 let pendingPreviewPath = '';
 const expandedTreeNodes = new Set();
+let fieldLibrary = [];
+let selectedFieldTemplate = null;
 
 const cssEscape = (value) => {
   if (typeof value !== 'string') value = String(value ?? '');
@@ -925,6 +927,7 @@ function renderEditorFor(node) {
       <div class="parser-card-actions parser-card-actions--top">
         <button class="btn btn-outline btn-compact" id="btn-copy-ver"><i class="fas fa-copy"></i> 复制</button>
         <button class="btn btn-compact" id="btn-add-field"><i class="fas fa-plus"></i> 添加字段</button>
+        <button class="btn btn-compact" id="btn-add-field-history"><i class="fas fa-history"></i> 添加历史字段</button>
         ${pasteFieldBtn}
       </div>
       <p class="parser-edit-label">版本</p>
@@ -941,6 +944,7 @@ function renderEditorFor(node) {
     qs('#btn-del-ver')?.addEventListener('click', () => deleteConfigItem('version', mt, ver));
     qs('#btn-add-field')?.addEventListener('click', () => addFieldInline(mt, ver));
     qs('#btn-paste-field')?.addEventListener('click', () => pasteField(mt, ver));
+    qs('#btn-add-field-history')?.addEventListener('click', () => openFieldHistoryDropdown(mt, ver));
     focusPreviewPath(nodePath);
     return;
   }
@@ -1416,6 +1420,7 @@ function showAddFieldModal(mt, ver) {
   const vSel = qs('#field-version');
   if (mtSel) { mtSel.innerHTML = `<option value="${escapeAttr(mt)}">${escapeHtml(mt)}</option>`; mtSel.value = mt; }
   if (vSel) { vSel.innerHTML = `<option value="${escapeAttr(ver)}">${escapeHtml(ver)}</option>`; vSel.value = ver; }
+  selectedFieldTemplate = null;
 }
 
 function hideAddVersionModal() { const m = qs('#add-version-modal'); if (m) m.style.display = 'none'; }
@@ -1500,7 +1505,246 @@ function submitFieldForm() {
   const length = lenRaw === '' ? -1 : parseInt(lenRaw, 10);
   if (!mt || !ver || !name) { showMessage('error', '请完整填写字段信息', 'parser-config-messages'); return; }
   hideAddFieldModal();
-  submitFieldRaw(mt, ver, name, (isNaN(start) ? 0 : start), (isNaN(length) ? -1 : length));
+  const sVal = (isNaN(start) ? 0 : start);
+  const lVal = (isNaN(length) ? -1 : length);
+  submitFieldRaw(mt, ver, name, sVal, lVal).then(async () => {
+    const withEsc = !!qs('#field-lib-include-escapes')?.checked;
+    if (withEsc && selectedFieldTemplate && selectedFieldTemplate.escapes && Object.keys(selectedFieldTemplate.escapes).length) {
+      const base = `${mt}.Versions.${ver}.Fields.${name}.Escapes`;
+      const updates = {};
+      updates[base] = selectedFieldTemplate.escapes;
+      try {
+        await postJSON('/api/update-parser-config', { factory: workingFactory, system: workingSystem, updates });
+        showMessage('success', '已带出转义映射', 'parser-config-messages');
+        await refreshFullConfig();
+        await refreshTree();
+        renderEditorFor({ type: 'field', messageType: mt, version: ver, field: name });
+      } catch (err) {
+        showMessage('error', '带出转义失败：' + err.message, 'parser-config-messages');
+      }
+    }
+  });
+}
+
+function openFieldHistoryDropdown(mt, ver) {
+  const box = qs('#full-layers-container');
+  if (!box) return;
+  let dd = qs('#field-history-dropdown');
+  if (dd) { dd.remove(); }
+  dd = document.createElement('div');
+  dd.id = 'field-history-dropdown';
+  dd.style.cssText = 'position:fixed; z-index:9999;';
+  const panel = document.createElement('div');
+  panel.className = 'neon-card';
+  panel.style.cssText = 'width:480px; max-height:420px; overflow:auto; padding:16px;';
+  panel.innerHTML = `
+    <div class="panel-heading" style="margin-bottom:10px;">
+      <div>
+        <p class="panel-label">历史字段</p>
+        <h4>选择历史字段</h4>
+      </div>
+      <button class="btn btn-sm" id="field-history-close"><i class="fas fa-times"></i> 关闭</button>
+    </div>
+    <div class="search-box search-box--pill">
+      <i class="fas fa-search"></i>
+      <input id="field-history-search" class="search-input" placeholder="搜索字段名">
+      <label class="checkbox-item" style="margin-left:auto;">
+        <input type="checkbox" id="field-history-include-esc"> 带出转义
+      </label>
+    </div>
+    <div id="field-history-list" class="config-list"></div>
+  `;
+  dd.appendChild(panel);
+  const editCard = qs('.parser-edit-card');
+  (editCard || box).appendChild(dd);
+  // 定位到按钮附近
+  const btn = qs('#btn-add-field-history');
+  if (btn) {
+    const r = btn.getBoundingClientRect();
+    dd.style.left = `${Math.max(12, Math.floor(r.left))}px`;
+    dd.style.top = `${Math.floor(r.bottom + 6)}px`;
+  } else {
+    dd.style.left = '12px';
+    dd.style.top = '12px';
+  }
+  qs('#field-history-close')?.addEventListener('click', () => dd.remove());
+  panel.addEventListener('click', (e) => e.stopPropagation());
+  setTimeout(() => {
+    const onDocClick = (e) => { if (!dd.contains(e.target)) dd.remove(); };
+    document.addEventListener('click', onDocClick, { once: true });
+  }, 0);
+  renderFieldHistoryList(mt, ver);
+}
+
+async function renderFieldHistoryList(mt, ver) {
+  let list = [];
+  try {
+    list = await api.fetchFieldHistory(workingFactory, workingSystem);
+  } catch (e) {
+    list = buildFieldLibrary(workingConfig);
+  }
+  const box = qs('#field-history-list');
+  const search = qs('#field-history-search');
+  if (!box) return;
+  const render = (items) => {
+    box.innerHTML = '';
+    if (!items || !items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'message-empty';
+      empty.textContent = '暂无历史字段';
+      box.appendChild(empty);
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    items.slice(0, 50).forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'config-item config-item--slim';
+      row.innerHTML = `
+        <div class="config-info">
+          <div class="config-compact-title">
+            <h3>${escapeHtml(item.name)}</h3>
+            <span class="config-chip">使用次数：${item.usageCount || 1}</span>
+          </div>
+          <div class="config-compact-subline">Start ${item.start} / Len ${item.length === -1 ? '到结尾' : item.length}</div>
+        </div>
+        <div class="config-actions">
+          <button class="btn btn-sm btn-primary" data-action="apply">应用</button>
+        </div>
+      `;
+      row.querySelector('[data-action="apply"]').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const withEsc = !!qs('#field-history-include-esc')?.checked;
+        try {
+          await submitFieldRaw(mt, ver, item.name, Number(item.start || 0), Number(item.length || -1));
+          if (withEsc && item.escapes && Object.keys(item.escapes).length) {
+            const base = `${mt}.Versions.${ver}.Fields.${item.name}.Escapes`;
+            const updates = {}; updates[base] = item.escapes;
+            await postJSON('/api/update-parser-config', { factory: workingFactory, system: workingSystem, updates });
+            showMessage('success', '已带出转义映射', 'parser-config-messages');
+            await refreshFullConfig(); await refreshTree();
+            renderEditorFor({ type: 'field', messageType: mt, version: ver, field: item.name });
+          }
+          const dd = qs('#field-history-dropdown'); if (dd) dd.remove();
+        } catch (err) {
+          showMessage('error', '添加历史字段失败：' + err.message, 'parser-config-messages');
+        }
+      });
+      frag.appendChild(row);
+    });
+    box.appendChild(frag);
+  };
+  render(list);
+  if (search) {
+    search.oninput = () => {
+      const kw = (search.value || '').trim().toLowerCase();
+      const filtered = (list || []).filter(it => String(it.name || '').toLowerCase().includes(kw));
+      render(filtered);
+    };
+  }
+}
+async function buildAndRenderFieldLibrary() {
+  try {
+    const list = await api.fetchFieldHistory(workingFactory, workingSystem);
+    fieldLibrary = Array.isArray(list) ? list : [];
+  } catch (e) {
+    fieldLibrary = buildFieldLibrary(workingConfig);
+  }
+  renderFieldLibrary(fieldLibrary);
+}
+
+function buildFieldLibrary(config) {
+  const map = new Map();
+  const result = [];
+  Object.keys(config || {}).forEach(mt => {
+    const verMap = config[mt]?.Versions || {};
+    Object.keys(verMap).forEach(ver => {
+      const fields = verMap[ver]?.Fields || {};
+      Object.keys(fields).forEach(fname => {
+        const f = fields[fname] || {};
+        const start = Number(f.Start ?? 0);
+        const length = (f.Length == null ? -1 : Number(f.Length));
+        const key = `${fname}|${start}|${length}`;
+        const esc = f.Escapes || {};
+        if (!map.has(key)) {
+          map.set(key, { name: fname, start, length, usageCount: 1, escapes: esc });
+        } else {
+          const item = map.get(key);
+          item.usageCount += 1;
+        }
+      });
+    });
+  });
+  map.forEach(v => result.push(v));
+  result.sort((a, b) => b.usageCount - a.usageCount || a.name.localeCompare(b.name));
+  return result;
+}
+
+function ensureFieldLibraryUI() {
+  const modal = qs('#add-field-modal .modal-body');
+  if (!modal) return;
+  let host = qs('#field-library-host', modal);
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'field-library-host';
+    host.innerHTML = `
+      <div class="form-group">
+        <label>历史字段</label>
+        <div class="form-row">
+          <input type="text" id="field-lib-search" class="form-control" placeholder="搜索字段名">
+          <label style="display:flex; align-items:center; gap:6px; margin-left:8px;">
+            <input type="checkbox" id="field-lib-include-escapes"> 带出转义
+          </label>
+        </div>
+      </div>
+      <div id="field-lib-list" class="list-group"></div>
+    `;
+    modal.appendChild(host);
+    const search = qs('#field-lib-search');
+    if (search) {
+      search.addEventListener('input', () => {
+        const kw = (search.value || '').trim().toLowerCase();
+        const filtered = fieldLibrary.filter(it => it.name.toLowerCase().includes(kw));
+        renderFieldLibrary(filtered);
+      });
+    }
+  }
+}
+
+function renderFieldLibrary(list) {
+  const box = qs('#field-lib-list');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!list || !list.length) {
+    const empty = document.createElement('div');
+    empty.className = 'message-empty';
+    empty.textContent = '暂无历史字段';
+    box.appendChild(empty);
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  list.slice(0, 100).forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'list-item';
+    row.innerHTML = `
+      <div class="list-item-main">
+        <strong>${escapeHtml(item.name)}</strong>
+        <span style="margin-left:8px; color:#8f98aa;">Start ${item.start} / Len ${item.length === -1 ? '到结尾' : item.length}</span>
+      </div>
+      <div class="list-item-meta">使用次数：${item.usageCount}</div>
+    `;
+    row.addEventListener('click', () => {
+      const nameEl = qs('#field-name');
+      const startEl = qs('#field-start');
+      const lenEl = qs('#field-length');
+      if (nameEl) nameEl.value = item.name;
+      if (startEl) startEl.value = String(item.start);
+      if (lenEl) lenEl.value = item.length === -1 ? '' : String(item.length);
+      selectedFieldTemplate = { name: item.name, start: item.start, length: item.length, escapes: item.escapes };
+      showMessage('success', '已填充历史字段', 'parser-config-messages');
+    });
+    frag.appendChild(row);
+  });
+  box.appendChild(frag);
 }
 
 // =============== JSON 预览 / 撤销 / 搜索 / 导入导出 ===============
