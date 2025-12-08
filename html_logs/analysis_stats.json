@@ -1,0 +1,108 @@
+[
+  {
+    "timestamp": "20251208_214042",
+    "factory": "DaDong",
+    "system": "OSM",
+    "log_files": [
+      "tcp_trace.200.log"
+    ],
+    "log_file_count": 1,
+    "log_entry_count": 5,
+    "options": {
+      "generate_html": true,
+      "generate_original_log": true,
+      "generate_sorted_log": true
+    },
+    "stages": [
+      {
+        "stage": "读取日志文件",
+        "duration_ms": 0.19,
+        "input_items": 1,
+        "output_items": 10
+      },
+      {
+        "stage": "解析日志条目",
+        "duration_ms": 5.25,
+        "input_items": 10,
+        "output_items": 5
+      },
+      {
+        "stage": "匹配请求-回复",
+        "duration_ms": 0.01,
+        "input_items": 5,
+        "output_items": 5
+      },
+      {
+        "stage": "生成HTML报告",
+        "duration_ms": 1.75,
+        "input_items": 5,
+        "output_items": 1
+      },
+      {
+        "stage": "输出文本日志",
+        "duration_ms": 0.57,
+        "input_items": 5,
+        "output_items": 1
+      },
+      {
+        "stage": "输出排序日志",
+        "duration_ms": 0.43,
+        "input_items": 5,
+        "output_items": 1
+      }
+    ]
+  },
+  {
+    "timestamp": "20251208_214242",
+    "factory": "DaDong",
+    "system": "OSM",
+    "log_files": [
+      "tcp_trace.200.log"
+    ],
+    "log_file_count": 1,
+    "log_entry_count": 5,
+    "options": {
+      "generate_html": true,
+      "generate_original_log": true,
+      "generate_sorted_log": true
+    },
+    "stages": [
+      {
+        "stage": "读取日志文件",
+        "duration_ms": 0.14,
+        "input_items": 1,
+        "output_items": 10
+      },
+      {
+        "stage": "解析日志条目",
+        "duration_ms": 2.81,
+        "input_items": 10,
+        "output_items": 5
+      },
+      {
+        "stage": "匹配请求-回复",
+        "duration_ms": 0.01,
+        "input_items": 5,
+        "output_items": 5
+      },
+      {
+        "stage": "生成HTML报告",
+        "duration_ms": 1.36,
+        "input_items": 5,
+        "output_items": 1
+      },
+      {
+        "stage": "输出文本日志",
+        "duration_ms": 1.85,
+        "input_items": 5,
+        "output_items": 1
+      },
+      {
+        "stage": "输出排序日志",
+        "duration_ms": 0.45,
+        "input_items": 5,
+        "output_items": 1
+      }
+    ]
+  }
+]
