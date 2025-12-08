@@ -20,6 +20,7 @@ export class VisualParserBuilder {
             activeSegmentId: null,
             mode: 'literal' // 'literal' only for now as per user request
         };
+        this.msgContainerId = 'visual-parser-messages';
         this.container = null;
         this.init();
     }
@@ -38,12 +39,17 @@ export class VisualParserBuilder {
                     <button class="vp-close-btn" id="vp-close">&times;</button>
                 </div>
                 <div class="vp-body">
+                    <div id="visual-parser-messages" class="vp-messages" data-label="解析构建器"></div>
                     <div class="vp-left-panel">
                         <div class="vp-section">
                             <div class="vp-section-title">1. 样本录入 (自动去除开头空格)</div>
                             <textarea id="vp-raw-input" class="vp-raw-input" placeholder="请在此粘贴报文样本..."></textarea>
                             <div class="vp-controls">
                                 <button id="vp-parse-btn" class="vp-btn vp-btn-primary"><i class="fas fa-sync"></i> 刷新视图</button>
+                                <button id="vp-clean-noise-btn" class="vp-btn vp-btn-secondary" style="margin-left:8px;"><i class="fas fa-broom"></i> 去除开头杂音</button>
+                                <label class="vp-radio-label" style="margin-left:12px; display:flex; align-items:center; gap:6px;">
+                                    <input type="checkbox" id="vp-clean-all-lines"> 对所有行执行清理
+                                </label>
                                 <span class="vp-radio-label" style="margin-left:auto; color:#6b7280;">
                                     <i class="fas fa-info-circle"></i> 当前模式：原样模式 (空格/换行均占位)
                                 </span>
@@ -89,6 +95,7 @@ export class VisualParserBuilder {
 
         // Input controls
         document.getElementById('vp-parse-btn').addEventListener('click', () => this.parseRawInput());
+        document.getElementById('vp-clean-noise-btn').addEventListener('click', () => this.cleanNoisePrefix());
 
         // Viewer interaction
         const viewer = document.getElementById('vp-viewer');
@@ -141,6 +148,50 @@ export class VisualParserBuilder {
         // Here we keep them.
 
         this.renderViewer();
+    }
+
+    stripNoisePrefix(s) {
+        let t = (s || '').replace(/^\s+/, '');
+        const m = t.match(/^[^A-Za-z0-9]{5,12}/);
+        if (m) {
+            t = t.slice(m[0].length);
+        } else if (t.length >= 7) {
+            const head = t.slice(0, 7);
+            const nonCount = head.replace(/[A-Za-z0-9]/g, '').length;
+            if (nonCount >= 5) {
+                t = t.slice(7);
+            }
+        }
+        return t.replace(/^\s+/, '');
+    }
+
+    cleanNoisePrefix() {
+        const inputEl = document.getElementById('vp-raw-input');
+        const before = inputEl.value || '';
+        if (!before) return;
+        const lines = before.split(/\r?\n/);
+        let changed = false;
+        let changedCount = 0;
+        for (let i = 0; i < lines.length; i++) {
+            const txt = lines[i] || '';
+            if (txt.trim() === '') continue;
+            const cleanedLine = this.stripNoisePrefix(txt);
+            if (cleanedLine !== txt) {
+                lines[i] = cleanedLine;
+                changed = true;
+                changedCount++;
+            }
+        }
+        if (!changed) {
+            showMessage('info', '没有检测到可清理的杂音', this.msgContainerId);
+            return;
+        }
+        const cleanedAll = lines.join('\n');
+        inputEl.value = cleanedAll;
+        this.state.rawMessage = cleanedAll;
+        this.clearSegments();
+        this.renderViewer();
+        showMessage('success', `已去除报文开头杂音（${changedCount} 行）`, this.msgContainerId);
     }
 
     renderViewer() {
@@ -221,7 +272,7 @@ export class VisualParserBuilder {
             );
 
             if (overlap) {
-                showMessage('warning', '选区与已有字段重叠，请重新选择');
+                showMessage('warning', '选区与已有字段重叠，请重新选择', this.msgContainerId);
             } else {
                 this.addSegment(start, length);
             }
@@ -467,7 +518,7 @@ export class VisualParserBuilder {
         const verSeg = this.state.segments.find(s => s.role === 'version');
 
         if (!typeSeg) {
-            showMessage('error', '必须指定一个字段为"报文类型"');
+            showMessage('error', '必须指定一个字段为"报文类型"', this.msgContainerId);
             return;
         }
 
@@ -475,7 +526,7 @@ export class VisualParserBuilder {
         const system = document.getElementById('parser-system-select').value;
 
         if (!factory || !system) {
-            showMessage('error', '请先在主界面选择厂区和系统');
+            showMessage('error', '请先在主界面选择厂区和系统', this.msgContainerId);
             return;
         }
 
@@ -497,7 +548,7 @@ export class VisualParserBuilder {
 
         // 4. Check for duplicates
         if (fullConfig[typeKey] && fullConfig[typeKey].Versions && fullConfig[typeKey].Versions[verKey]) {
-            showMessage('error', `配置已存在！\n报文类型: ${typeKey}\n版本号: ${verKey}\n请使用不同的版本号或删除现有配置后再试。`);
+            showMessage('error', `配置已存在！\n报文类型: ${typeKey}\n版本号: ${verKey}\n请使用不同的版本号或删除现有配置后再试。`, this.msgContainerId);
             return;
         }
 
@@ -541,7 +592,7 @@ export class VisualParserBuilder {
         // 7. Save
         try {
             await api.saveParserConfig({ factory, system, config: fullConfig });
-            showMessage('success', `配置已保存！\n报文类型: ${typeKey}\n版本号: ${verKey}`);
+            showMessage('success', `配置已保存！\n报文类型: ${typeKey}\n版本号: ${verKey}`, this.msgContainerId);
 
             // Force refresh the parser config tree
             this.refreshParserConfigUI();
@@ -552,7 +603,7 @@ export class VisualParserBuilder {
                 this.clearSegments();
             }
         } catch (err) {
-            showMessage('error', `保存失败: ${err.message}`);
+            showMessage('error', `保存失败: ${err.message}`, this.msgContainerId);
         }
     }
 
