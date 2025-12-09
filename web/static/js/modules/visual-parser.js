@@ -351,7 +351,7 @@ export class VisualParserBuilder {
                 ${segment.role !== 'version' ? `
                 <div class="vp-form-group">
                     <label>字段名称</label>
-                    <input type="text" class="vp-form-control" id="edit-seg-name" value="${segment.name}">
+                    <input type="text" class="vp-form-control" id="edit-seg-name" value="${segment.name}" ${segment.role === 'type' ? 'disabled style="opacity:0.7; cursor:not-allowed;"' : ''}>
                 </div>
                 ` : ''}
                 <div class="vp-form-group">
@@ -405,7 +405,7 @@ export class VisualParserBuilder {
         `;
 
         // Bind inputs
-        if (segment.role !== 'version') {
+        if (segment.role === 'none') {
             document.getElementById('edit-seg-name').addEventListener('input', (e) => {
                 segment.name = e.target.value;
                 this.renderSegmentList();
@@ -442,7 +442,14 @@ export class VisualParserBuilder {
 
         document.querySelectorAll('input[name="seg-role"]').forEach(radio => {
             radio.addEventListener('change', (e) => {
-                segment.role = e.target.value;
+                const newRole = e.target.value;
+
+                // 当定义为报文类型时，将字段名称直接使用字段内容并锁定编辑
+                if (newRole === 'type') {
+                    segment.name = segment.value;
+                }
+
+                segment.role = newRole;
                 this.renderEditor(); // Re-render entire editor when role changes
                 this.renderSegmentList();
             });
