@@ -802,9 +802,7 @@ def delete_log():
 @app.route('/report/<path:filename>')
 def serve_report(filename):
     """提供生成的报告文件"""
-    # 报告实际输出目录等同于 LogAnalyzer 的 output_dir（即 HTML_LOGS_DIR），
-    # 这里直接使用已配置的目录来查找文件，避免额外拼接导致路径错误。
-    report_dir = analysis_service.get_reports_directory() or HTML_LOGS_DIR
+    report_dir = os.path.join(HTML_LOGS_DIR, 'html_logs')
     return send_from_directory(report_dir, filename)
 
 

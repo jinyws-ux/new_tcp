@@ -720,8 +720,23 @@ class ReportGenerator:
                             }}
 
                             const reportPath = analyzeData.html_report || '';
-                            setQaStatus('分析完成，正在刷新报告...', 'success');
+                            setQaStatus('分析完成，正在打开报告...', 'success');
                             if (reportPath) {{
+                                try {{
+                                    const openRes = await apiFetch('/api/open-in-browser', {{
+                                        method: 'POST',
+                                        headers: {{ 'Content-Type': 'application/json' }},
+                                        body: JSON.stringify({{ url: reportPath }})
+                                    }});
+                                    const openData = await openRes.json();
+                                    if (openRes.ok && openData?.success) {{
+                                        setQaStatus('报告已生成并自动打开，如未弹出请检查后台服务', 'success');
+                                        return;
+                                    }}
+                                }} catch (openErr) {{
+                                    console.warn('打开报告失败，尝试前端跳转', openErr);
+                                }}
+
                                 const filename = reportPath.split(/[/\\\\]/).pop();
                                 if (filename) {{
                                     window.location.href = `/report/${{encodeURIComponent(filename)}}`;
@@ -832,7 +847,7 @@ class ReportGenerator:
                         rows.forEach(r => {{
                             let show = true;
                             if(re && !re.test(r.textContent)) show = false;
-                            
+
                             const ts = parseInt(r.getAttribute('data-timestamp')||0);
                             if(show && ts > 0) {{
                                 if(sTime && ts < sTime) show = false;
@@ -845,6 +860,24 @@ class ReportGenerator:
                             }}
                             r.style.display = show ? 'flex' : 'none'; // Flex display
                         }});
+                    }}
+                    function sortLogs(order = 'asc') {{
+                        const container = document.getElementById('log-container');
+                        if (!container) return;
+                        const rows = Array.from(container.querySelectorAll('.timestamp')).filter(r => r.id.startsWith('ts_'));
+                        rows.sort((a, b) => {{
+                            const ta = parseInt(a.getAttribute('data-timestamp') || '0');
+                            const tb = parseInt(b.getAttribute('data-timestamp') || '0');
+                            return order === 'desc' ? (tb - ta) : (ta - tb);
+                        }});
+                        const frag = document.createDocumentFragment();
+                        rows.forEach(row => {{
+                            const logId = row.getAttribute('data-log-id');
+                            const retries = logId ? document.getElementById(`retries_${{logId}}`) : null;
+                            frag.appendChild(row);
+                            if (retries) frag.appendChild(retries);
+                        }});
+                        container.appendChild(frag);
                     }}
                     function clearFilter() {{ document.getElementById('filterInput').value=''; document.getElementById('startTime').value=''; document.getElementById('endTime').value=''; selectedMsgTypes.clear(); renderTags(); applyFilter(); }}
                     function filterKey(e) {{ if(e.key==='Enter') applyFilter(); }}
@@ -919,6 +952,11 @@ class ReportGenerator:
                             <div class="selected-tags" id="selectedTags"></div>
                             <input id="msgTypeInput" class="crystal-input" style="width: 100px;" placeholder="选择类型..." />
                             <div id="msgTypeDropdown" class="msg-type-dropdown"></div>
+                        </div>
+                        <div class="filter-group" style="gap: 6px;">
+                            <span class="filter-label">排序</span>
+                            <button class="btn" onclick="sortLogs('asc')">时间正序</button>
+                            <button class="btn" onclick="sortLogs('desc')">时间逆序</button>
                         </div>
                         <button class="btn btn-primary" onclick="applyFilter()">筛选</button>
                         <button class="btn" onclick="clearFilter()">重置</button>
@@ -1021,7 +1059,7 @@ class ReportGenerator:
                     ts_val = self._get_attr(main_entry, 'timestamp')
                     ts_ms = int(ts_val.timestamp() * 1000) if ts_val and isinstance(ts_val, datetime) else 0
 
-                    f.write(f"""        <div class="timestamp" id="ts_{index}" data-timestamp="{ts_ms}" {trans_attr}>
+                    f.write(f"""        <div class="timestamp" id="ts_{index}" data-log-id="{log_id}" data-timestamp="{ts_ms}" {trans_attr}>
                             {line_html}
                             <a class="jump-btn" href="{raw_filename}#{get_raw_anchor(main_entry)}" target="_blank">原文</a>
                         </div>\n""")
