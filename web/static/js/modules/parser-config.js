@@ -1447,14 +1447,7 @@ function showAddFieldModal(mt, ver) {
   if (fieldNameEl) fieldNameEl.value = suggested;
   if (fieldStartEl) fieldStartEl.value = '0';
   if (fieldLengthEl) fieldLengthEl.value = '';
-
-  if (fieldNameEl) {
-    const openHistory = () => openFieldHistoryDropdown(mt, ver, fieldNameEl);
-    fieldNameEl.onfocus = openHistory;
-    fieldNameEl.oninput = openHistory;
-    fieldNameEl.focus();
-    openHistory();
-  }
+  if (fieldNameEl) fieldNameEl.focus();
 }
 
 function hideAddVersionModal() { const m = qs('#add-version-modal'); if (m) m.style.display = 'none'; }
@@ -1596,15 +1589,18 @@ function openFieldHistoryDropdown(mt, ver, anchorEl = null) {
   dd.appendChild(panel);
   const editCard = qs('.parser-edit-card');
   (editCard || box).appendChild(dd);
-  // 定位到按钮附近
+  // 定位：优先按钮附近，否则居中偏上
   const btn = anchorEl || qs('#btn-add-field-history');
   if (btn) {
     const r = btn.getBoundingClientRect();
     dd.style.left = `${Math.max(12, Math.floor(r.left))}px`;
     dd.style.top = `${Math.floor(r.bottom + 6)}px`;
   } else {
-    dd.style.left = '12px';
-    dd.style.top = '12px';
+    const rect = panel.getBoundingClientRect();
+    const centerLeft = Math.max(12, Math.floor((window.innerWidth - rect.width) / 2));
+    const centerTop = Math.max(32, Math.floor((window.innerHeight - rect.height) / 2));
+    dd.style.left = `${centerLeft}px`;
+    dd.style.top = `${centerTop}px`;
   }
 
   qs('#field-history-close')?.addEventListener('click', () => dd.remove());
