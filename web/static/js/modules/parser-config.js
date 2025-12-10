@@ -1589,10 +1589,10 @@ function openFieldHistoryDropdown(mt, ver, anchorEl = null) {
   dd.appendChild(panel);
   const editCard = qs('.parser-edit-card');
   (editCard || box).appendChild(dd);
-  // 定位：优先按钮附近，否则居中偏上
-  const btn = anchorEl || qs('#btn-add-field-history');
-  if (btn) {
-    const r = btn.getBoundingClientRect();
+  // 定位：默认居中偏上，只有显式指定锚点时才贴近锚点
+  const anchor = anchorEl;
+  if (anchor) {
+    const r = anchor.getBoundingClientRect();
     dd.style.left = `${Math.max(12, Math.floor(r.left))}px`;
     dd.style.top = `${Math.floor(r.bottom + 6)}px`;
   } else {
