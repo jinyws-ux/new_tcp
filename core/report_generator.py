@@ -652,7 +652,7 @@ class ReportGenerator:
                                 throw new Error(searchData?.error || '搜索日志失败');
                             }}
                             const logs = Array.isArray(searchData?.logs) ? searchData.logs : [];
-                            const files = logs.map(log => ({
+                            const files = logs.map(log => ({{
                                 name: log.name || '',
                                 remote_path: log.remote_path || log.path || '',
                                 path: log.remote_path || log.path || '',
@@ -660,7 +660,7 @@ class ReportGenerator:
                                 mtime: log.mtime || log.timestamp || '',
                                 type: log.type || 'unknown',
                                 node: log.node || ''
-                            })).filter(f => f.path);
+                            }})).filter(f => f.path);
                             if (!files.length) {{
                                 throw new Error('未找到可下载的日志');
                             }}
