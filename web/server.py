@@ -802,8 +802,7 @@ def delete_log():
 @app.route('/report/<path:filename>')
 def serve_report(filename):
     """提供生成的报告文件"""
-    report_dir = os.path.join(HTML_LOGS_DIR, 'html_logs')
-    return send_from_directory(report_dir, filename)
+    return send_from_directory(HTML_LOGS_DIR, filename)
 
 
 @app.route('/static/<path:filename>')

@@ -950,7 +950,7 @@ function renderEditorFor(node) {
     qs('#btn-save-ver')?.addEventListener('click', () => saveVersion(mt, ver));
     qs('#btn-copy-ver')?.addEventListener('click', () => copyVersion(mt, ver));
     qs('#btn-del-ver')?.addEventListener('click', () => deleteConfigItem('version', mt, ver));
-    qs('#btn-add-field')?.addEventListener('click', () => addFieldInline(mt, ver));
+    qs('#btn-add-field')?.addEventListener('click', () => showAddFieldModal(mt, ver));
     qs('#btn-paste-field')?.addEventListener('click', () => pasteField(mt, ver));
     qs('#btn-add-field-history')?.addEventListener('click', () => openFieldHistoryDropdown(mt, ver));
     setupFieldOrderList(mt, ver);
@@ -1439,10 +1439,24 @@ function showAddFieldModal(mt, ver) {
   if (mtSel) { mtSel.innerHTML = `<option value="${escapeAttr(mt)}">${escapeHtml(mt)}</option>`; mtSel.value = mt; }
   if (vSel) { vSel.innerHTML = `<option value="${escapeAttr(ver)}">${escapeHtml(ver)}</option>`; vSel.value = ver; }
   selectedFieldTemplate = null;
+
+  const fieldNameEl = qs('#field-name');
+  const fieldStartEl = qs('#field-start');
+  const fieldLengthEl = qs('#field-length');
+  const suggested = suggestName('新字段', Object.keys(workingConfig?.[mt]?.Versions?.[ver]?.Fields || {}));
+  if (fieldNameEl) fieldNameEl.value = suggested;
+  if (fieldStartEl) fieldStartEl.value = '0';
+  if (fieldLengthEl) fieldLengthEl.value = '';
+  if (fieldNameEl) fieldNameEl.focus();
 }
 
 function hideAddVersionModal() { const m = qs('#add-version-modal'); if (m) m.style.display = 'none'; }
-function hideAddFieldModal() { const m = qs('#add-field-modal'); if (m) m.style.display = 'none'; }
+function hideAddFieldModal() {
+  const m = qs('#add-field-modal');
+  if (m) m.style.display = 'none';
+  const dd = qs('#field-history-dropdown');
+  if (dd) dd.remove();
+}
 function showAddMessageTypeModal() { const m = qs('#add-message-type-modal'); if (m) m.style.display = 'block'; }
 function hideAddMessageTypeModal() { const m = qs('#add-message-type-modal'); if (m) m.style.display = 'none'; }
 
@@ -1544,7 +1558,7 @@ function submitFieldForm() {
   });
 }
 
-function openFieldHistoryDropdown(mt, ver) {
+function openFieldHistoryDropdown(mt, ver, anchorEl = null) {
   const box = qs('#full-layers-container');
   if (!box) return;
   let dd = qs('#field-history-dropdown');
@@ -1575,21 +1589,58 @@ function openFieldHistoryDropdown(mt, ver) {
   dd.appendChild(panel);
   const editCard = qs('.parser-edit-card');
   (editCard || box).appendChild(dd);
-  // 定位到按钮附近
-  const btn = qs('#btn-add-field-history');
-  if (btn) {
-    const r = btn.getBoundingClientRect();
+  // 定位：默认居中偏上，只有显式指定锚点时才贴近锚点
+  const anchor = anchorEl;
+  if (anchor) {
+    const r = anchor.getBoundingClientRect();
     dd.style.left = `${Math.max(12, Math.floor(r.left))}px`;
     dd.style.top = `${Math.floor(r.bottom + 6)}px`;
   } else {
-    dd.style.left = '12px';
-    dd.style.top = '12px';
+    const rect = panel.getBoundingClientRect();
+    const centerLeft = Math.max(12, Math.floor((window.innerWidth - rect.width) / 2));
+    const centerTop = Math.max(32, Math.floor((window.innerHeight - rect.height) / 2));
+    dd.style.left = `${centerLeft}px`;
+    dd.style.top = `${centerTop}px`;
   }
+
   qs('#field-history-close')?.addEventListener('click', () => dd.remove());
   panel.addEventListener('click', (e) => e.stopPropagation());
+
+  const header = panel.querySelector('.panel-heading');
+  if (header) {
+    let dragging = false;
+    let offsetX = 0;
+    let offsetY = 0;
+    const onMouseMove = (e) => {
+      if (!dragging) return;
+      dd.style.left = `${Math.max(4, e.clientX - offsetX)}px`;
+      dd.style.top = `${Math.max(4, e.clientY - offsetY)}px`;
+    };
+    const onMouseUp = () => {
+      dragging = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+    header.style.cursor = 'move';
+    header.addEventListener('mousedown', (e) => {
+      dragging = true;
+      const rect = dd.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+  }
+
   setTimeout(() => {
-    const onDocClick = (e) => { if (!dd.contains(e.target)) dd.remove(); };
-    document.addEventListener('click', onDocClick, { once: true });
+    const onDocClick = (e) => {
+      const target = e.target;
+      if (dd.contains(target)) return;
+      if (anchorEl && anchorEl.contains(target)) return;
+      dd.remove();
+      document.removeEventListener('click', onDocClick);
+    };
+    document.addEventListener('click', onDocClick);
   }, 0);
   renderFieldHistoryList(mt, ver);
 }
