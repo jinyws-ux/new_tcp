@@ -1448,9 +1448,6 @@ function showAddFieldModal(mt, ver) {
   if (fieldStartEl) fieldStartEl.value = '0';
   if (fieldLengthEl) fieldLengthEl.value = '';
 
-  ensureFieldLibraryUI();
-  buildAndRenderFieldLibrary();
-
   if (fieldNameEl) {
     const openHistory = () => openFieldHistoryDropdown(mt, ver, fieldNameEl);
     fieldNameEl.onfocus = openHistory;
@@ -1461,7 +1458,12 @@ function showAddFieldModal(mt, ver) {
 }
 
 function hideAddVersionModal() { const m = qs('#add-version-modal'); if (m) m.style.display = 'none'; }
-function hideAddFieldModal() { const m = qs('#add-field-modal'); if (m) m.style.display = 'none'; }
+function hideAddFieldModal() {
+  const m = qs('#add-field-modal');
+  if (m) m.style.display = 'none';
+  const dd = qs('#field-history-dropdown');
+  if (dd) dd.remove();
+}
 function showAddMessageTypeModal() { const m = qs('#add-message-type-modal'); if (m) m.style.display = 'block'; }
 function hideAddMessageTypeModal() { const m = qs('#add-message-type-modal'); if (m) m.style.display = 'none'; }
 
