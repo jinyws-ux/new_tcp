@@ -439,6 +439,18 @@ class ReportGenerator:
                 </style>
                 <script>
                     let selectedMsgTypes = new Set();
+                    const API_BASE = (() => {{
+                        try {{
+                            const params = new URLSearchParams(window.location.search || '');
+                            const queryBase = (params.get('api_base') || '').trim();
+                            if (queryBase) return queryBase.replace(/\/$/, '');
+                        }} catch (_) {{}}
+                        if (window.location.protocol === 'file:') {{
+                            return 'http://127.0.0.1:5000';
+                        }}
+                        return window.location.origin;
+                    }})();
+
                     const quickState = {{
                         factories: [],
                         systems: [],
@@ -448,6 +460,12 @@ class ReportGenerator:
                         template: '',
                         loading: false,
                     }};
+
+                    function apiFetch(path, options) {{
+                        if (path.startsWith('http')) return fetch(path, options);
+                        const url = `${{API_BASE}}${{path.startsWith('/') ? path : `/${{path}}`}}`;
+                        return fetch(url, options);
+                    }}
 
                     // Sidebar Toggle Logic
                     function toggleSidebar() {{
@@ -553,13 +571,15 @@ class ReportGenerator:
 
                     async function loadQaFactories() {{
                         try {{
-                            const res = await fetch('/api/factories');
+                            setQaStatus(`正在连接 ${API_BASE} 获取厂区...`, 'info');
+                            const res = await apiFetch('/api/factories');
                             const data = await res.json();
                             if (!res.ok) throw new Error(data?.error || '加载厂区失败');
                             quickState.factories = Array.isArray(data) ? data : [];
                             renderQaSelect('qaFactory', quickState.factories, '请选择厂区');
+                            setQaStatus('请选择厂区、系统和区域后执行分析', 'info');
                         }} catch (err) {{
-                            setQaStatus(err?.message || '加载厂区失败', 'error');
+                            setQaStatus(`${{err?.message || '加载厂区失败'}}（接口: ${{API_BASE}}/api/factories）`, 'error');
                         }}
                     }}
 
@@ -573,7 +593,7 @@ class ReportGenerator:
                         renderQaSelect('qaTemplate', [], '请选择区域');
                         if (!factoryId) return;
                         try {{
-                            const res = await fetch(`/api/systems?factory=${{encodeURIComponent(factoryId)}}`);
+                            const res = await apiFetch(`/api/systems?factory=${{encodeURIComponent(factoryId)}}`);
                             const data = await res.json();
                             if (!res.ok) throw new Error(data?.error || '加载系统失败');
                             quickState.systems = Array.isArray(data) ? data : [];
@@ -589,7 +609,7 @@ class ReportGenerator:
                         renderQaSelect('qaTemplate', [], '请选择区域');
                         if (!factoryId || !systemId) return;
                         try {{
-                            const res = await fetch(`/api/templates?factory=${{encodeURIComponent(factoryId)}}&system=${{encodeURIComponent(systemId)}}&page_size=200`);
+                            const res = await apiFetch(`/api/templates?factory=${{encodeURIComponent(factoryId)}}&system=${{encodeURIComponent(systemId)}}&page_size=200`);
                             const data = await res.json();
                             if (!res.ok || data?.success === false) {{
                                 throw new Error(data?.error || '加载区域模板失败');
@@ -638,7 +658,7 @@ class ReportGenerator:
                         setQaLoading(true, '下载并分析中...');
                         try {{
                             setQaStatus('正在搜索区域日志...', 'info');
-                            const searchRes = await fetch('/api/logs/search_strict', {{
+                            const searchRes = await apiFetch('/api/logs/search_strict', {{
                                 method: 'POST',
                                 headers: {{ 'Content-Type': 'application/json' }},
                                 body: JSON.stringify({{
@@ -666,7 +686,7 @@ class ReportGenerator:
                             }}
 
                             setQaStatus('正在下载日志...', 'info');
-                            const downloadRes = await fetch('/api/logs/download', {{
+                            const downloadRes = await apiFetch('/api/logs/download', {{
                                 method: 'POST',
                                 headers: {{ 'Content-Type': 'application/json' }},
                                 body: JSON.stringify({{
@@ -689,7 +709,7 @@ class ReportGenerator:
 
                             setQaStatus('日志已下载，正在分析...', 'info');
                             const configId = `${{factory}}_${{system}}.json`;
-                            const analyzeRes = await fetch('/api/analyze', {{
+                            const analyzeRes = await apiFetch('/api/analyze', {{
                                 method: 'POST',
                                 headers: {{ 'Content-Type': 'application/json' }},
                                 body: JSON.stringify({{ logs: logPaths, config: configId }})
@@ -750,21 +770,8 @@ class ReportGenerator:
                         }}
                     }}
 
-                    function disableQuickAnalyzeForFile() {{
-                        const panel = document.getElementById('quickAnalyzePanel');
-                        const inputs = panel ? panel.querySelectorAll('select, button') : [];
-                        inputs.forEach(el => {{ el.disabled = true; el.classList.add('disabled'); }});
-                        setQaStatus('本地打开报告无法连接后台接口，请在服务端查看以使用快速分析', 'error');
-                        const header = document.getElementById('qaHeader');
-                        if (header) header.classList.add('disabled');
-                    }}
-
                     async function initQuickAnalyze() {{
                         bindQuickAnalyzeEvents();
-                        if (window.location.protocol === 'file:') {{
-                            disableQuickAnalyzeForFile();
-                            return;
-                        }}
                         setQaStatus('选择厂区、系统和区域后，可一键下载并刷新报告', 'info');
                         await loadQaFactories();
                     }}
