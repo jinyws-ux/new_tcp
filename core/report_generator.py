@@ -439,7 +439,7 @@ class ReportGenerator:
                 </style>
                 <script>
                     let selectedMsgTypes = new Set();
-                    const quickState = {
+                    const quickState = {{
                         factories: [],
                         systems: [],
                         templates: [],
@@ -447,7 +447,7 @@ class ReportGenerator:
                         system: '',
                         template: '',
                         loading: false,
-                    };
+                    }};
 
                     // Sidebar Toggle Logic
                     function toggleSidebar() {{
