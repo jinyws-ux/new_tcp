@@ -641,6 +641,18 @@ class ReportGenerator:
                         hint.textContent = nodes.length ? `节点：${{nodes.slice(0, 5).join(', ')}}${{nodes.length > 5 ? ' …' : ''}}` : '该区域未包含节点信息';
                     }}
 
+                    function resolveReportUrl(reportPath) {{
+                        if (!reportPath) return '';
+                        if (/^https?:\/\//i.test(reportPath) || /^file:/i.test(reportPath)) {{
+                            return reportPath;
+                        }}
+                        const filename = reportPath.split(/[/\\\\]/).pop();
+                        if (filename) {{
+                            return `${{API_BASE}}/report/${{encodeURIComponent(filename)}}`;
+                        }}
+                        return `${{API_BASE}}/report`;
+                    }}
+
                     async function quickDownloadAndAnalyze() {{
                         if (quickState.loading) return;
                         const factory = quickState.factory;
@@ -720,6 +732,7 @@ class ReportGenerator:
                             }}
 
                             const reportPath = analyzeData.html_report || '';
+                            const reportUrl = resolveReportUrl(reportPath);
                             setQaStatus('分析完成，正在打开报告...', 'success');
                             if (reportPath) {{
                                 try {{
@@ -737,12 +750,11 @@ class ReportGenerator:
                                     console.warn('打开报告失败，尝试前端跳转', openErr);
                                 }}
 
-                                const filename = reportPath.split(/[/\\\\]/).pop();
-                                if (filename) {{
-                                    window.location.href = `/report/${{encodeURIComponent(filename)}}`;
+                                if (reportUrl) {{
+                                    window.location.href = reportUrl;
                                     return;
                                 }}
-                                window.location.href = reportPath;
+                                window.location.reload();
                                 return;
                             }}
                             window.location.reload();
