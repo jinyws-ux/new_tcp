@@ -167,7 +167,9 @@ function addLogRow(log) {
   // 下载时间
   const tdTime = document.createElement('td');
   const downloadTime = log.download_time || log.timestamp || '';
-  tdTime.textContent = downloadTime ? new Date(downloadTime).toLocaleString() : '';
+  tdTime.textContent = downloadTime
+    ? new Date(downloadTime).toLocaleString('zh-CN', { hour12: false })
+    : '';
   tr.appendChild(tdTime);
 
   // 大小
