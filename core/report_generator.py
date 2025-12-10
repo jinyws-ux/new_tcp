@@ -750,8 +750,21 @@ class ReportGenerator:
                         }}
                     }}
 
+                    function disableQuickAnalyzeForFile() {{
+                        const panel = document.getElementById('quickAnalyzePanel');
+                        const inputs = panel ? panel.querySelectorAll('select, button') : [];
+                        inputs.forEach(el => {{ el.disabled = true; el.classList.add('disabled'); }});
+                        setQaStatus('本地打开报告无法连接后台接口，请在服务端查看以使用快速分析', 'error');
+                        const header = document.getElementById('qaHeader');
+                        if (header) header.classList.add('disabled');
+                    }}
+
                     async function initQuickAnalyze() {{
                         bindQuickAnalyzeEvents();
+                        if (window.location.protocol === 'file:') {{
+                            disableQuickAnalyzeForFile();
+                            return;
+                        }}
                         setQaStatus('选择厂区、系统和区域后，可一键下载并刷新报告', 'info');
                         await loadQaFactories();
                     }}
