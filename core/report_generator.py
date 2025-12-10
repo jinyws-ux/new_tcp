@@ -68,7 +68,7 @@ class ReportGenerator:
             # =================================================================
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(f"""<!DOCTYPE html>
-            <html>
+            <html lang="zh-CN">
             <head>
                 <title>日志分析报告</title>
                 <meta charset="utf-8">
@@ -475,9 +475,9 @@ class ReportGenerator:
                         </div>
                         <div class="filter-group">
                             <span class="filter-label">🕒 时间</span>
-                            <input id="startTime" class="crystal-input" type="datetime-local" step="1" style="width:170px;" />
+                            <input id="startTime" class="crystal-input" type="datetime-local" step="1" style="width:170px;" lang="zh-CN" />
                             <span style="color:#ccc">-</span>
-                            <input id="endTime" class="crystal-input" type="datetime-local" step="1" style="width:170px;" />
+                            <input id="endTime" class="crystal-input" type="datetime-local" step="1" style="width:170px;" lang="zh-CN" />
                         </div>
                         <div class="filter-group msg-type-container">
                             <span class="filter-label">🏷️ 报文</span>
@@ -630,7 +630,7 @@ class ReportGenerator:
             # =================================================================
             with open(raw_output_path, 'w', encoding='utf-8') as f_raw:
                 f_raw.write(f"""<!DOCTYPE html>
-            <html>
+            <html lang="zh-CN">
             <head>
                 <title>日志原文 - {filename}</title>
                 <style>
