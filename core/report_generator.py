@@ -225,6 +225,128 @@ class ReportGenerator:
                         height: 100%;
                     }}
 
+                    /* Quick Analyze Panel */
+                    #quickAnalyzePanel {{
+                        background: #fff;
+                        border-bottom: 1px solid #e5e7eb;
+                        padding: 10px 20px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 10px;
+                        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+                    }}
+                    #quickAnalyzePanel .qa-header {{
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 12px;
+                        cursor: pointer;
+                        user-select: none;
+                    }}
+                    #quickAnalyzePanel .qa-title {{
+                        font-weight: 700;
+                        font-size: 15px;
+                        color: #111827;
+                        display: flex;
+                        align-items: center;
+                        gap: 6px;
+                    }}
+                    #quickAnalyzePanel .qa-status {{
+                        color: #6b7280;
+                        font-size: 12px;
+                        margin-top: 2px;
+                    }}
+                    #quickAnalyzePanel .qa-status[data-type="error"] {{ color: #b91c1c; }}
+                    #quickAnalyzePanel .qa-status[data-type="success"] {{ color: #0f5132; }}
+                    #quickAnalyzePanel .qa-status[data-type="info"] {{ color: #1d4ed8; }}
+                    #quickAnalyzePanel .qa-toggle-btn {{
+                        background: #f3f4f6;
+                        border: 1px solid #e5e7eb;
+                        color: #374151;
+                        border-radius: 6px;
+                        padding: 6px 12px;
+                        font-size: 13px;
+                        cursor: pointer;
+                        transition: all 0.15s ease;
+                    }}
+                    #quickAnalyzePanel .qa-toggle-btn:hover {{ background: #e5e7eb; }}
+                    #quickAnalyzePanel .qa-body {{
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 12px;
+                        align-items: flex-end;
+                        transition: max-height 0.2s ease, opacity 0.15s ease;
+                    }}
+                    #quickAnalyzePanel.collapsed .qa-body {{
+                        max-height: 0;
+                        opacity: 0;
+                        overflow: hidden;
+                        padding: 0;
+                        margin: 0;
+                    }}
+                    #quickAnalyzePanel .qa-field {{
+                        display: flex;
+                        flex-direction: column;
+                        gap: 6px;
+                        min-width: 160px;
+                    }}
+                    #quickAnalyzePanel .qa-label {{
+                        font-size: 12px;
+                        color: #6b7280;
+                    }}
+                    #quickAnalyzePanel select,
+                    #quickAnalyzePanel button.qa-run-btn {{
+                        height: 38px;
+                        border-radius: 8px;
+                        border: 1px solid #e5e7eb;
+                        padding: 0 10px;
+                        font-size: 13px;
+                        background: #fff;
+                        color: #111827;
+                    }}
+                    #quickAnalyzePanel button.qa-run-btn {{
+                        background: #2563eb;
+                        color: #fff;
+                        border: none;
+                        cursor: pointer;
+                        box-shadow: 0 4px 10px rgba(37,99,235,0.18);
+                        transition: transform 0.1s ease, box-shadow 0.1s ease;
+                        min-width: 150px;
+                    }}
+                    #quickAnalyzePanel button.qa-run-btn:disabled {{
+                        background: #93c5fd;
+                        cursor: not-allowed;
+                        box-shadow: none;
+                    }}
+                    #quickAnalyzePanel button.qa-run-btn:hover:not(:disabled) {{
+                        transform: translateY(-1px);
+                        box-shadow: 0 8px 18px rgba(37,99,235,0.22);
+                    }}
+                    #quickAnalyzePanel .qa-helper {{
+                        font-size: 12px;
+                        color: #9ca3af;
+                    }}
+                    #quickAnalyzePanel .qa-badge {{
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 4px;
+                        padding: 2px 8px;
+                        border-radius: 999px;
+                        background: #eff6ff;
+                        color: #1d4ed8;
+                        font-size: 12px;
+                        border: 1px solid #dbeafe;
+                    }}
+                    #quickAnalyzePanel .qa-header-left {{
+                        display: flex;
+                        flex-direction: column;
+                        gap: 2px;
+                    }}
+                    #quickAnalyzePanel.loading .qa-status::after {{
+                        content: ' · 处理中…';
+                        color: #1d4ed8;
+                    }}
+
                     /* Filter Bar (Sticky inside main wrapper) */
                     #filterBar {{
                         flex-shrink: 0;
@@ -317,7 +439,16 @@ class ReportGenerator:
                 </style>
                 <script>
                     let selectedMsgTypes = new Set();
-                    
+                    const quickState = {
+                        factories: [],
+                        systems: [],
+                        templates: [],
+                        factory: '',
+                        system: '',
+                        template: '',
+                        loading: false,
+                    };
+
                     // Sidebar Toggle Logic
                     function toggleSidebar() {{
                         const sb = document.getElementById('sidebar');
@@ -376,6 +507,255 @@ class ReportGenerator:
                         }});
                     }}
 
+                    function setQaStatus(text, type = 'info') {{
+                        const el = document.getElementById('qaStatus');
+                        if (!el) return;
+                        el.textContent = text || '';
+                        el.setAttribute('data-type', type || 'info');
+                    }}
+
+                    function toggleQuickPanel(forceExpand = null) {{
+                        const panel = document.getElementById('quickAnalyzePanel');
+                        const btn = document.getElementById('qaToggleBtn');
+                        if (!panel) return;
+                        const currentCollapsed = panel.classList.contains('collapsed');
+                        const willExpand = forceExpand !== null ? forceExpand : currentCollapsed;
+                        panel.classList.toggle('collapsed', !willExpand);
+                        panel.setAttribute('data-expanded', willExpand ? '1' : '0');
+                        if (btn) btn.textContent = willExpand ? '收起' : '展开';
+                    }}
+
+                    function setQaLoading(loading, text = '处理中...') {{
+                        quickState.loading = !!loading;
+                        const panel = document.getElementById('quickAnalyzePanel');
+                        const btn = document.getElementById('qaRunBtn');
+                        if (panel) panel.classList.toggle('loading', loading);
+                        if (btn) {{
+                            btn.disabled = loading;
+                            btn.textContent = loading ? text : '下载并分析';
+                        }}
+                    }}
+
+                    function renderQaSelect(selId, items, placeholder) {{
+                        const sel = document.getElementById(selId);
+                        if (!sel) return;
+                        const prev = sel.value;
+                        sel.innerHTML = `<option value="">${{placeholder || '请选择'}}</option>`;
+                        (items || []).forEach(item => {{
+                            const opt = document.createElement('option');
+                            opt.value = item.id || item.value || item.name || '';
+                            opt.textContent = item.name || item.label || opt.value || '';
+                            sel.appendChild(opt);
+                        }});
+                        const hasPrev = Array.from(sel.options).some(o => o.value === prev);
+                        if (hasPrev) sel.value = prev;
+                    }}
+
+                    async function loadQaFactories() {{
+                        try {{
+                            const res = await fetch('/api/factories');
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data?.error || '加载厂区失败');
+                            quickState.factories = Array.isArray(data) ? data : [];
+                            renderQaSelect('qaFactory', quickState.factories, '请选择厂区');
+                        }} catch (err) {{
+                            setQaStatus(err?.message || '加载厂区失败', 'error');
+                        }}
+                    }}
+
+                    async function loadQaSystems(factoryId) {{
+                        const sel = document.getElementById('qaSystem');
+                        if (sel) sel.value = '';
+                        quickState.system = '';
+                        quickState.systems = [];
+                        quickState.templates = [];
+                        renderQaSelect('qaSystem', [], '请选择系统');
+                        renderQaSelect('qaTemplate', [], '请选择区域');
+                        if (!factoryId) return;
+                        try {{
+                            const res = await fetch(`/api/systems?factory=${{encodeURIComponent(factoryId)}}`);
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data?.error || '加载系统失败');
+                            quickState.systems = Array.isArray(data) ? data : [];
+                            renderQaSelect('qaSystem', quickState.systems, '请选择系统');
+                        }} catch (err) {{
+                            setQaStatus(err?.message || '加载系统失败', 'error');
+                        }}
+                    }}
+
+                    async function loadQaTemplates(factoryId, systemId) {{
+                        quickState.template = '';
+                        quickState.templates = [];
+                        renderQaSelect('qaTemplate', [], '请选择区域');
+                        if (!factoryId || !systemId) return;
+                        try {{
+                            const res = await fetch(`/api/templates?factory=${{encodeURIComponent(factoryId)}}&system=${{encodeURIComponent(systemId)}}&page_size=200`);
+                            const data = await res.json();
+                            if (!res.ok || data?.success === false) {{
+                                throw new Error(data?.error || '加载区域模板失败');
+                            }}
+                            const items = data?.items || data?.data?.items || [];
+                            quickState.templates = Array.isArray(items) ? items : [];
+                            renderQaSelect('qaTemplate', quickState.templates, '请选择区域');
+                            updateQaNodesHint();
+                        }} catch (err) {{
+                            setQaStatus(err?.message || '加载区域模板失败', 'error');
+                        }}
+                    }}
+
+                    function getSelectedTemplate() {{
+                        const tplId = quickState.template;
+                        if (!tplId) return null;
+                        return (quickState.templates || []).find(t => (t.id === tplId) || (t.tid === tplId));
+                    }}
+
+                    function updateQaNodesHint() {{
+                        const tpl = getSelectedTemplate();
+                        const hint = document.getElementById('qaTemplateHint');
+                        if (!hint) return;
+                        if (!tpl) {{
+                            hint.textContent = '从已保存的区域模板中选择节点';
+                            return;
+                        }}
+                        const nodes = Array.isArray(tpl.nodes) ? tpl.nodes : [];
+                        hint.textContent = nodes.length ? `节点：${{nodes.slice(0, 5).join(', ')}}${{nodes.length > 5 ? ' …' : ''}}` : '该区域未包含节点信息';
+                    }}
+
+                    async function quickDownloadAndAnalyze() {{
+                        if (quickState.loading) return;
+                        const factory = quickState.factory;
+                        const system = quickState.system;
+                        const tpl = getSelectedTemplate();
+                        if (!factory || !system) {{
+                            setQaStatus('请先选择厂区与系统', 'error');
+                            return;
+                        }}
+                        if (!tpl) {{
+                            setQaStatus('请选择要分析的区域', 'error');
+                            return;
+                        }}
+
+                        setQaLoading(true, '下载并分析中...');
+                        try {{
+                            setQaStatus('正在搜索区域日志...', 'info');
+                            const searchRes = await fetch('/api/logs/search_strict', {{
+                                method: 'POST',
+                                headers: {{ 'Content-Type': 'application/json' }},
+                                body: JSON.stringify({{
+                                    template_id: tpl.id || tpl.tid || tpl.template_id || '',
+                                    include_realtime: true,
+                                    include_archive: false,
+                                }})
+                            }});
+                            const searchData = await searchRes.json();
+                            if (!searchRes.ok || searchData?.success === false) {{
+                                throw new Error(searchData?.error || '搜索日志失败');
+                            }}
+                            const logs = Array.isArray(searchData?.logs) ? searchData.logs : [];
+                            const files = logs.map(log => ({
+                                name: log.name || '',
+                                remote_path: log.remote_path || log.path || '',
+                                path: log.remote_path || log.path || '',
+                                size: log.size || 0,
+                                mtime: log.mtime || log.timestamp || '',
+                                type: log.type || 'unknown',
+                                node: log.node || ''
+                            })).filter(f => f.path);
+                            if (!files.length) {{
+                                throw new Error('未找到可下载的日志');
+                            }}
+
+                            setQaStatus('正在下载日志...', 'info');
+                            const downloadRes = await fetch('/api/logs/download', {{
+                                method: 'POST',
+                                headers: {{ 'Content-Type': 'application/json' }},
+                                body: JSON.stringify({{
+                                    files,
+                                    factory,
+                                    system,
+                                    nodes: Array.isArray(tpl.nodes) ? tpl.nodes : [],
+                                    node: (tpl.nodes && tpl.nodes[0]) ? tpl.nodes[0] : ''
+                                }})
+                            }});
+                            const downloadData = await downloadRes.json();
+                            if (!downloadRes.ok || downloadData?.success === false) {{
+                                throw new Error(downloadData?.error || '下载失败');
+                            }}
+                            const downloaded = Array.isArray(downloadData.downloaded_files) ? downloadData.downloaded_files : [];
+                            const logPaths = downloaded.map(d => d.path).filter(Boolean);
+                            if (!logPaths.length) {{
+                                throw new Error('下载成功但未返回日志路径');
+                            }}
+
+                            setQaStatus('日志已下载，正在分析...', 'info');
+                            const configId = `${{factory}}_${{system}}.json`;
+                            const analyzeRes = await fetch('/api/analyze', {{
+                                method: 'POST',
+                                headers: {{ 'Content-Type': 'application/json' }},
+                                body: JSON.stringify({{ logs: logPaths, config: configId }})
+                            }});
+                            const analyzeData = await analyzeRes.json();
+                            if (!analyzeRes.ok || analyzeData?.success === false) {{
+                                throw new Error(analyzeData?.error || '分析失败');
+                            }}
+
+                            const reportPath = analyzeData.html_report || '';
+                            setQaStatus('分析完成，正在刷新报告...', 'success');
+                            if (reportPath) {{
+                                const filename = reportPath.split(/[/\\\\]/).pop();
+                                if (filename) {{
+                                    window.location.href = `/report/${{encodeURIComponent(filename)}}`;
+                                    return;
+                                }}
+                                window.location.href = reportPath;
+                                return;
+                            }}
+                            window.location.reload();
+                        }} catch (err) {{
+                            setQaStatus(err?.message || '操作失败', 'error');
+                        }} finally {{
+                            setQaLoading(false);
+                        }}
+                    }}
+
+                    function bindQuickAnalyzeEvents() {{
+                        const panel = document.getElementById('quickAnalyzePanel');
+                        const header = document.getElementById('qaHeader');
+                        const toggleBtn = document.getElementById('qaToggleBtn');
+                        if (header) header.addEventListener('click', () => toggleQuickPanel());
+                        if (toggleBtn) toggleBtn.addEventListener('click', (e) => {{ e.stopPropagation(); toggleQuickPanel(); }});
+
+                        const fac = document.getElementById('qaFactory');
+                        const sys = document.getElementById('qaSystem');
+                        const tpl = document.getElementById('qaTemplate');
+                        fac?.addEventListener('change', async (e) => {{
+                            quickState.factory = e.target.value;
+                            await loadQaSystems(quickState.factory);
+                            setQaStatus('请选择系统和区域后执行分析', 'info');
+                        }});
+                        sys?.addEventListener('change', async (e) => {{
+                            quickState.system = e.target.value;
+                            await loadQaTemplates(quickState.factory, quickState.system);
+                            setQaStatus('请选择区域后执行分析', 'info');
+                        }});
+                        tpl?.addEventListener('change', (e) => {{
+                            quickState.template = e.target.value;
+                            updateQaNodesHint();
+                        }});
+
+                        const runBtn = document.getElementById('qaRunBtn');
+                        runBtn?.addEventListener('click', quickDownloadAndAnalyze);
+                        if (panel && !panel.classList.contains('collapsed')) {{
+                            panel.setAttribute('data-expanded', '1');
+                        }}
+                    }}
+
+                    async function initQuickAnalyze() {{
+                        bindQuickAnalyzeEvents();
+                        setQaStatus('选择厂区、系统和区域后，可一键下载并刷新报告', 'info');
+                        await loadQaFactories();
+                    }}
+
                     function init() {{
                         // Filter UI Event Bindings
                         const input = document.getElementById('msgTypeInput');
@@ -387,7 +767,8 @@ class ReportGenerator:
                                 if (!e.target.closest('.msg-type-container')) dropdown.style.display = 'none';
                             }});
                         }}
-                        
+
+                        initQuickAnalyze();
                         renderAbnormalNav();
                     }}
 
@@ -468,6 +849,40 @@ class ReportGenerator:
                 </div>
 
                 <div id="main-wrapper">
+                    <div id="quickAnalyzePanel" class="expanded">
+                        <div class="qa-header" id="qaHeader">
+                            <div class="qa-header-left">
+                                <div class="qa-title">⚡ 快速分析 <span class="qa-badge">一键刷新报告</span></div>
+                                <div class="qa-status" id="qaStatus" data-type="info">加载中...</div>
+                            </div>
+                            <button id="qaToggleBtn" class="qa-toggle-btn" type="button">收起</button>
+                        </div>
+                        <div class="qa-body">
+                            <div class="qa-field">
+                                <label class="qa-label" for="qaFactory">厂区</label>
+                                <select id="qaFactory">
+                                    <option value="">请选择厂区</option>
+                                </select>
+                            </div>
+                            <div class="qa-field">
+                                <label class="qa-label" for="qaSystem">系统</label>
+                                <select id="qaSystem">
+                                    <option value="">请选择系统</option>
+                                </select>
+                            </div>
+                            <div class="qa-field" style="min-width: 220px;">
+                                <label class="qa-label" for="qaTemplate">区域</label>
+                                <select id="qaTemplate">
+                                    <option value="">请选择区域</option>
+                                </select>
+                                <div class="qa-helper" id="qaTemplateHint">从已保存的区域模板中选择节点</div>
+                            </div>
+                            <div class="qa-field" style="min-width: 180px;">
+                                <label class="qa-label">操作</label>
+                                <button id="qaRunBtn" class="qa-run-btn" type="button">下载并分析</button>
+                            </div>
+                        </div>
+                    </div>
                     <div id="filterBar">
                         <div class="filter-group" style="flex: 1; min-width: 200px;">
                             <span class="filter-label">🔍 搜索</span>
